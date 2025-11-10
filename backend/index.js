@@ -77,24 +77,24 @@ app.use(cors({
 
 // Fyers Azure OpenAI
 const AZURE_CONFIG_FYERS = {
-  endpoint: process.env.AZURE_OPENAI_ENDPOINT || 'https://codestore-ai.openai.azure.com/',
-  apiKey: process.env.AZURE_OPENAI_API_KEY || 'EvkhikwvmvJYbqnV175XrD7C1ym5yXEsYAb5nEz4mbf2BJPXNWeHJQQJ99BJACHYHv6XJ3w3AAABACOGQydk',
+  endpoint: process.env.AZURE_OPENAI_ENDPOINT ,
+  apiKey: process.env.AZURE_OPENAI_API_KEY ,
   deployment: process.env.AZURE_OPENAI_DEPLOYMENT || 'o3-mini',
   apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-12-01-preview'
 };
 
 // Kite/Upstox Azure OpenAI
 const AZURE_CONFIG_KITE = {
-  endpoint: 'https://codestore-ai.openai.azure.com/',
-  apiKey: 'EvkhikwvmvJYbqnV175XrD7C1ym5yXEsYAb5nEz4mbf2BJPXNWeHJQQJ99BJACHYHv6XJ3w3AAABACOGQydk',
-  deployment: 'o3-mini',
-  apiVersion: '2024-12-01-preview'
+  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  apiKey: process.env.AZURE_OPENAI_API_KEY ,
+  deployment: process.env.AZURE_OPENAI_DEPLOYMENT,
+  apiVersion: process.env.AZURE_OPENAI_API_VERSION
 };
 
 // Upstox OAuth
 const UPSTOX_CONFIG = {
-  apiKey: 'a5d645f8-c31e-4afd-82c7-296ac6b332fd',
-  apiSecret: 'mprx3irvh2',
+  apiKey: process.env.UPSTOX_API_KEY,
+  apiSecret: process.env.UPSTOX_API_SECRET,
   redirectUri: 'http://localhost:5000/api/auth/callback'
 };
 
