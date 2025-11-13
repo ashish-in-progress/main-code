@@ -333,3 +333,17 @@ body, html {
     height: 32px;
   }
 }
+.btn-danger, .action-btn.danger {
+  background-color: #ff4d4d;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-danger:hover, .action-btn.danger:hover {
+  background-color: #e60000;
+}
+

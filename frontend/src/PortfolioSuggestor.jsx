@@ -4,7 +4,7 @@ import "./index.css";
 
 // Use relative URL for proxy; replace as needed for production
 const WEBHOOK_URL = '/n8n/webhook/82d63927-dc2e-416f-abf9-9915cbb2d705';
-
+console.log(WEBHOOK_URL)
 const PortfolioSuggestor = ({onBackToTrading}) => {
   // Use stable sessionId between reloads
   const [sessionId, setSessionId] = useState(() =>
@@ -51,8 +51,62 @@ const PortfolioSuggestor = ({onBackToTrading}) => {
 
   const parseMessageContent = (content) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const iframeUrlPattern = /https:\/\/ashish-in-progress\.github\.io\/html\/\?user=/;
+    
+    // Check if content contains the iframe URL pattern
+    const urls = content.match(urlRegex);
+    const hasIframeUrl = urls && urls.some(url => iframeUrlPattern.test(url));
+    
+    if (hasIframeUrl) {
+      const iframeUrl = urls.find(url => iframeUrlPattern.test(url));
+      const parts = content.split(urlRegex);
+      
+      return (
+        <div>
+          {parts.map((part, index) =>
+            urlRegex.test(part) && iframeUrlPattern.test(part) ? (
+              <div key={index} style={{ marginTop: '10px' }}>
+                <a
+                  href={part}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="link"
+                  style={{ display: 'block', marginBottom: '10px' }}
+                >
+                  {part}
+                </a>
+                <iframe
+                  src={part}
+                  style={{
+                    width: '100%',
+                    height: '600px',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '8px'
+                  }}
+                  title="Portfolio Visualization"
+                  sandbox="allow-scripts allow-same-origin"
+                />
+              </div>
+            ) : urlRegex.test(part) ? (
+              <a
+                key={index}
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="link"
+              >
+                {part}
+              </a>
+            ) : (
+              <span key={index}>{part}</span>
+            )
+          )}
+        </div>
+      );
+    }
+    
+    // Default behavior for messages without iframe URLs
     const parts = content.split(urlRegex);
-
     return parts.map((part, index) =>
       urlRegex.test(part) ? (
         <a
@@ -133,6 +187,19 @@ const PortfolioSuggestor = ({onBackToTrading}) => {
     setInputMessage(message);
     inputRef.current?.focus();
   };
+const handleClearChat = () => {
+  if (window.confirm("Are you sure you want to clear the chat?")) {
+    localStorage.removeItem(`chat_${sessionId}`);
+    setMessages([
+      {
+        role: 'assistant',
+        content:
+          "Chat cleared 🧹. How can I assist you now?",
+        timestamp: new Date()
+      }
+    ]);
+  }
+};
 
   return (
     <div className="portfolio-container">
@@ -146,7 +213,12 @@ const PortfolioSuggestor = ({onBackToTrading}) => {
         >
           ← Back to Tools
         </button>
+        
       )}
+      <button className="action-btn danger" onClick={handleClearChat}>
+  🧹 Clear Chat
+</button>
+
         <div className="header-left">
           <Bot className="header-icon" />
           <div>

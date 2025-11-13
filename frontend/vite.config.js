@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/n8n': {
-        target: 'https://local.codestore.co',
+        target: 'https://local.codestore.co',   
         changeOrigin: true,
         secure: false,
         // Optionally, rewrite path if needed:

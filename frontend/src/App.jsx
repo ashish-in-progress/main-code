@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
-// 1. Add this import at the top
-import PortfolioSuggestor  from './PortfolioSuggestor.jsx';
-// 2. Add this state at the top of your App component (after the existing state)
+import PortfolioSuggestor from './PortfolioSuggestor.jsx';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -14,29 +12,25 @@ axios.defaults.baseURL = API_BASE_URL;
 function App() {
   const [activeView, setActiveView] = useState('trading'); // 'trading' or 'portfolio'
 
-// 3. Add this condition BEFORE your return statement
+  const [activeBroker, setActiveBroker] = useState('fyers');
+  const [brokerStatus, setBrokerStatus] = useState({
+    fyers: { authenticated: false, active: false },
+    kite: { authenticated: false, active: false },
+    upstox: { authenticated: false, active: false }
+  });
 
-// 4. Add this button in your header (in the header-right section)
+  const [messages, setMessages] = useState([]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loginUrl, setLoginUrl] = useState(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [showManualVerify, setShowManualVerify] = useState(false);
+  const [currentBrokerLogin, setCurrentBrokerLogin] = useState(null);
 
-const [activeBroker, setActiveBroker] = useState('fyers');
-const [brokerStatus, setBrokerStatus] = useState({
-  fyers: { authenticated: false, active: false },
-  kite: { authenticated: false, active: false },
-  upstox: { authenticated: false, active: false }
-});
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
-const [messages, setMessages] = useState([]);
-const [inputMessage, setInputMessage] = useState('');
-const [loading, setLoading] = useState(false);
-const [loginUrl, setLoginUrl] = useState(null);
-const [isAuthenticating, setIsAuthenticating] = useState(false);
-const [showManualVerify, setShowManualVerify] = useState(false);
-const [currentBrokerLogin, setCurrentBrokerLogin] = useState(null);
-
-const messagesEndRef = useRef(null);
-const inputRef = useRef(null);
-
-const scrollToBottom = () => {
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -96,7 +90,8 @@ const scrollToBottom = () => {
           
           if (loginRes.data.success && loginRes.data.login_url) {
             setLoginUrl(loginRes.data.login_url);
-            addMessage('system', 'Please complete Fyers login in the popup window.');
+            addMessage('system', '🔐 Opening Fyers login window...');
+            addMessage('system', '✅ Please complete the login, then click the "Verify Login" button below.');
             
             const loginWindow = window.open(
               loginRes.data.login_url, 
@@ -104,7 +99,13 @@ const scrollToBottom = () => {
               'width=600,height=700'
             );
             
-            setTimeout(() => pollFyersAuth(loginWindow), 20000);
+            // Show manual verify button immediately
+            setShowManualVerify(true);
+            
+            if (!loginWindow || loginWindow.closed) {
+              addMessage('error', '❌ Popup blocked! Please allow popups and try again.');
+              addMessage('system', `Or open this URL manually: ${loginRes.data.login_url}`);
+            }
           } else {
             addMessage('error', 'Failed to get Fyers login URL');
           }
@@ -121,7 +122,7 @@ const scrollToBottom = () => {
           if (response.data.success && response.data.login_url) {
             setLoginUrl(response.data.login_url);
             addMessage('system', '🔐 Opening Kite login window...');
-            addMessage('system', '⏳ Please log in at Zerodha, then wait for automatic verification or click the verify button below.');
+            addMessage('system', '✅ Please log in at Zerodha, then click the "Verify Login" button below.');
             
             const loginWindow = window.open(
               response.data.login_url,
@@ -129,14 +130,13 @@ const scrollToBottom = () => {
               'width=600,height=700,scrollbars=yes'
             );
             
+            // Show manual verify button immediately
+            setShowManualVerify(true);
+            
             if (!loginWindow || loginWindow.closed) {
               addMessage('error', '❌ Popup blocked! Please allow popups and try again.');
               addMessage('system', `Or open this URL manually: ${response.data.login_url}`);
             }
-            
-            // Show manual verify button and start polling
-            setShowManualVerify(true);
-            setTimeout(() => pollKiteAuth(loginWindow), 25000);
             
           } else if (response.data.debug_response) {
             addMessage('error', 'Failed to extract login URL from response');
@@ -147,8 +147,8 @@ const scrollToBottom = () => {
         } catch (error) {
           console.error('Kite login error:', error);
           const errorMsg = error.code === 'ECONNABORTED' 
-          ? 'Connection timeout - Kite server took too long to respond'
-          : error.response?.data?.error || error.message;
+            ? 'Connection timeout - Kite server took too long to respond'
+            : error.response?.data?.error || error.message;
           addMessage('error', `Failed to connect to Kite: ${errorMsg}`);
         }
         
@@ -171,183 +171,97 @@ const scrollToBottom = () => {
     }
   };
   
-  const pollFyersAuth = async (loginWindow = null, attempts = 0) => {
-    const maxAttempts = 30;
-    
-    if (attempts >= maxAttempts) {
-      addMessage('system', 'Authentication timeout. Please try logging in again.');
-      return;
-    }
+  const handleManualVerify = async () => {
+    addMessage('system', '🔍 Checking authentication status...');
     
     try {
-      const response = await axios.post('/fyers/verify-auth');
+      const response = await axios.post(
+        currentBrokerLogin === 'kite' ? '/kite/verify-auth' : '/fyers/verify-auth'
+      );
       
       if (response.data.success && response.data.authenticated) {
-        addMessage('system', `✅ Fyers authentication successful! ${response.data.tools_count} tools available.`);
-        setActiveBroker('fyers');
-        await checkBrokerStatus();
-        
-        if (loginWindow && !loginWindow.closed) {
-          loginWindow.close();
+        addMessage('system', `✅ ${currentBrokerLogin.toUpperCase()} authentication successful!`);
+        if (response.data.tools_count) {
+          addMessage('system', `🔧 ${response.data.tools_count} tools are now available.`);
         }
+        setActiveBroker(currentBrokerLogin);
+        setShowManualVerify(false);
+        setCurrentBrokerLogin(null);
+        await checkBrokerStatus();
       } else {
-        setTimeout(() => pollFyersAuth(loginWindow, attempts + 1), 2000);
+        addMessage('error', `❌ Authentication not completed yet. Please complete the ${currentBrokerLogin.toUpperCase()} login first.`);
+        if (response.data.message) {
+          addMessage('system', response.data.message);
+        }
       }
     } catch (error) {
-      setTimeout(() => pollFyersAuth(loginWindow, attempts + 1), 2000);
+      addMessage('error', `Verification failed: ${error.response?.data?.error || error.message}`);
     }
   };
   
-  const pollKiteAuth = async (loginWindow = null, attempts = 0) => {
-    const maxAttempts = 60;
-    
-    if (attempts >= maxAttempts) {
-      addMessage('error', '⏱️ Authentication timeout. Please try again or click the verify button below.');
-      setShowManualVerify(true);
-      if (loginWindow && !loginWindow.closed) {
-        loginWindow.close();
-      }
+  const handleBrokerSwitch = async (broker) => {
+    if (!brokerStatus[broker]?.authenticated) {
+      addMessage('system', `Please login to ${broker.toUpperCase()} first.`);
       return;
     }
     
-    if (attempts === 0) {
-      addMessage('system', '🔍 Checking authentication status...');
+    try {
+      const response = await axios.post('/broker/select', { broker });
+      
+      if (response.data.success) {
+        setActiveBroker(broker);
+        addMessage('system', `Switched to ${broker.toUpperCase()}`);
+        await checkBrokerStatus();
+      } else if (response.data.status === 'need_auth') {
+        addMessage('system', response.data.message);
+      }
+    } catch (error) {
+      console.error('Switch error:', error);
+      addMessage('error', `Failed to switch broker: ${error.response?.data?.error || error.message}`);
+    }
+  };
+  
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    
+    if (!inputMessage.trim() || loading) return;
+    
+    if (!brokerStatus[activeBroker]?.authenticated) {
+      addMessage('system', `Please login to ${activeBroker.toUpperCase()} first.`);
+      return;
     }
     
+    const userMessage = inputMessage.trim();
+    setInputMessage('');
+    addMessage('user', userMessage);
+    setLoading(true);
+    
     try {
-      const response = await axios.post('/kite/verify-auth');
+      const response = await axios.post('/chat', {
+        message: userMessage
+      });
       
-      if (response.data.success && response.data.authenticated) {
-        addMessage('system', '✅ Kite authentication successful!');
-        addMessage('system', `👤 Profile loaded successfully. ${response.data.tools_count} tools available.`);
-        setActiveBroker('kite');
-        setShowManualVerify(false);
-        await checkBrokerStatus();
-        
-        if (loginWindow && !loginWindow.closed) {
-          loginWindow.close();
-        }
-        return;
-        
-      } else if (response.data.is_demo) {
-        console.log(`Kite auth check ${attempts + 1}/${maxAttempts}`);
-        
-        if (attempts === 5) {
-          addMessage('system', '⏳ Still waiting... Make sure to log in at the Zerodha page.');
-        } else if (attempts === 15) {
-          addMessage('system', '⏳ Still checking... The popup should show your Kite login.');
-        } else if (attempts === 30) {
-          addMessage('system', '⏳ Almost there... Still waiting for login completion. Or click verify button below.');
-          setShowManualVerify(true);
-        }
+      if (response.data.success) {
+        addMessage('assistant', response.data.response);
+      } else {
+        addMessage('error', response.data.error || 'Failed to get response');
       }
-      
     } catch (error) {
-      const errorMsg = error.response?.data?.error || '';
-      
-      if (errorMsg && 
-        !errorMsg.includes('Not connected') && 
-        !errorMsg.includes('Not authenticated') &&
-        !errorMsg.includes('demo')) {
-          addMessage('error', `❌ Authentication check failed: ${errorMsg}`);
-          setShowManualVerify(true);
-          if (loginWindow && !loginWindow.closed) {
-            loginWindow.close();
-          }
-          return;
-        }
-      }
-      
-      setTimeout(() => pollKiteAuth(loginWindow, attempts + 1), 2000);
-    };
-    
-    const handleManualVerify = async () => {
-      addMessage('system', '🔍 Manually checking authentication...');
-      
-      try {
-        const response = await axios.post(
-          currentBrokerLogin === 'kite' ? '/kite/verify-auth' : '/fyers/verify-auth'
-        );
-        
-        if (response.data.success && response.data.authenticated) {
-          addMessage('system', `✅ ${currentBrokerLogin.toUpperCase()} authentication confirmed!`);
-          setActiveBroker(currentBrokerLogin);
-          setShowManualVerify(false);
-          await checkBrokerStatus();
-        } else {
-          addMessage('error', `❌ Still not authenticated. Please complete the ${currentBrokerLogin.toUpperCase()} login first.`);
-          if (response.data.message) {
-            addMessage('system', response.data.message);
-          }
-        }
-      } catch (error) {
-        addMessage('error', `Verification failed: ${error.response?.data?.error || error.message}`);
-      }
-    };
-    
-    const handleBrokerSwitch = async (broker) => {
-      if (!brokerStatus[broker]?.authenticated) {
-        addMessage('system', `Please login to ${broker.toUpperCase()} first.`);
-        return;
-      }
-      
-      try {
-        const response = await axios.post('/broker/select', { broker });
-        
-        if (response.data.success) {
-          setActiveBroker(broker);
-          addMessage('system', `Switched to ${broker.toUpperCase()}`);
-          await checkBrokerStatus();
-        } else if (response.data.status === 'need_auth') {
-          addMessage('system', response.data.message);
-        }
-      } catch (error) {
-        console.error('Switch error:', error);
-        addMessage('error', `Failed to switch broker: ${error.response?.data?.error || error.message}`);
-      }
-    };
-    
-    const handleSendMessage = async (e) => {
-      e.preventDefault();
-      
-      if (!inputMessage.trim() || loading) return;
-      
-      if (!brokerStatus[activeBroker]?.authenticated) {
-        addMessage('system', `Please login to ${activeBroker.toUpperCase()} first.`);
-        return;
-      }
-      
-      const userMessage = inputMessage.trim();
-      setInputMessage('');
-      addMessage('user', userMessage);
-      setLoading(true);
-      
-      try {
-        const response = await axios.post('/chat', {
-          message: userMessage
-        });
-        
-        if (response.data.success) {
-          addMessage('assistant', response.data.response);
-        } else {
-          addMessage('error', response.data.error || 'Failed to get response');
-        }
-      } catch (error) {
-        console.error('Chat error:', error);
-        const errorMsg = error.response?.data?.error || error.message;
-        addMessage('error', `Error: ${errorMsg}`);
-      } finally {
-        setLoading(false);
-        inputRef.current?.focus();
-      }
-    };
-    
-    const handleResetChat = async () => {
-      try {
-        await axios.post('/chat/reset');
-        setMessages([]);
-        addMessage('system', 'Conversation reset');
-      } catch (error) {
+      console.error('Chat error:', error);
+      const errorMsg = error.response?.data?.error || error.message;
+      addMessage('error', `Error: ${errorMsg}`);
+    } finally {
+      setLoading(false);
+      inputRef.current?.focus();
+    }
+  };
+  
+  const handleResetChat = async () => {
+    try {
+      await axios.post('/chat/reset');
+      setMessages([]);
+      addMessage('system', 'Conversation reset');
+    } catch (error) {
       console.error('Reset error:', error);
       addMessage('error', 'Failed to reset conversation');
     }
@@ -412,16 +326,17 @@ const scrollToBottom = () => {
   if (activeView === 'portfolio') {
     return <PortfolioSuggestor onBackToTrading={() => setActiveView('trading')} />;
   }
+
   return (
     <div className="app">
       <header className="header">
         <button 
-  className="btn btn-success" 
-  onClick={() => setActiveView('portfolio')}
-  style={{ marginRight: '10px' }}
->
-  💼 Portfolio AI
-</button>
+          className="btn btn-success" 
+          onClick={() => setActiveView('portfolio')}
+          style={{ marginRight: '10px' }}
+        >
+          💼 Portfolio AI
+        </button>
         <div className="header-left">
           <h1>🚀 Unified Trading Assistant</h1>
           <span className="header-subtitle">Multi-Broker AI Portfolio Management</span>
@@ -554,14 +469,30 @@ const scrollToBottom = () => {
 
             {/* Manual Verify Button */}
             {showManualVerify && (
-              <div className="manual-verify-section">
+              <div className="manual-verify-section" style={{
+                marginTop: '15px',
+                padding: '15px',
+                background: '#f0f9ff',
+                border: '2px solid #3b82f6',
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
                 <button 
                   className="btn btn-success btn-block"
                   onClick={handleManualVerify}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    marginBottom: '8px'
+                  }}
                 >
-                  ✓ I have completed login
+                  ✓ Verify Login
                 </button>
-                <small>Click after logging in at {currentBrokerLogin?.toUpperCase()}</small>
+                <small style={{ display: 'block', color: '#475569' }}>
+                  Click after completing login at {currentBrokerLogin?.toUpperCase()}
+                </small>
               </div>
             )}
           </div>
@@ -683,7 +614,7 @@ const scrollToBottom = () => {
                   <ol>
                     <li>Click "Login" on any broker in the sidebar</li>
                     <li>Complete authentication in the popup window</li>
-                    <li>Wait for AI agent initialization</li>
+                    <li>Click the "Verify Login" button that appears</li>
                     <li>Start chatting naturally with your AI assistant!</li>
                   </ol>
                 </div>
