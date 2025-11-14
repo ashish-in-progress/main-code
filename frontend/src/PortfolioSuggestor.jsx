@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, AlertCircle, Loader2 } from 'lucide-react';
-import "./index.css";
 
 // Use relative URL for proxy; replace as needed for production
 const WEBHOOK_URL = '/n8n/webhook/82d63927-dc2e-416f-abf9-9915cbb2d705';
 console.log(WEBHOOK_URL)
+
 const PortfolioSuggestor = ({onBackToTrading}) => {
   // Use stable sessionId between reloads
   const [sessionId, setSessionId] = useState(() =>
@@ -187,19 +187,27 @@ const PortfolioSuggestor = ({onBackToTrading}) => {
     setInputMessage(message);
     inputRef.current?.focus();
   };
-const handleClearChat = () => {
-  if (window.confirm("Are you sure you want to clear the chat?")) {
-    localStorage.removeItem(`chat_${sessionId}`);
-    setMessages([
-      {
-        role: 'assistant',
-        content:
-          "Chat cleared 🧹. How can I assist you now?",
-        timestamp: new Date()
-      }
-    ]);
-  }
-};
+
+  const handleClearChat = () => {
+    if (window.confirm("Are you sure you want to clear the chat?")) {
+      localStorage.removeItem(`chat_${sessionId}`);
+      setMessages([
+        {
+          role: 'assistant',
+          content:
+            "Chat cleared 🧹. How can I assist you now?",
+          timestamp: new Date()
+        }
+      ]);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage(e);
+    }
+  };
 
   return (
     <div className="portfolio-container">
@@ -209,16 +217,22 @@ const handleClearChat = () => {
         <button
           className="btn btn-secondary"
           onClick={onBackToTrading}
-          style={{ marginBottom: '1em' }}
+          style={{ 
+            background: 'rgba(255,255,255,0.1)', 
+            border: '1px solid rgba(255,255,255,0.2)',
+            color: 'white',
+            padding: '0.5rem 1rem',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '0.85rem',
+            fontWeight: '600'
+          }}
         >
           ← Back to Tools
         </button>
         
       )}
-      <button className="action-btn danger" onClick={handleClearChat}>
-  🧹 Clear Chat
-</button>
-
+      
         <div className="header-left">
           <Bot className="header-icon" />
           <div>
@@ -228,6 +242,11 @@ const handleClearChat = () => {
             </p>
           </div>
         </div>
+        
+        <button className="clear-chat-btn" onClick={handleClearChat}>
+          🧹 Clear Chat
+        </button>
+        
         <div className="header-status">🟢 AI Online</div>
       </div>
 
@@ -315,7 +334,7 @@ const handleClearChat = () => {
 
           {/* Input */}
           <div className="input-area">
-            <form onSubmit={handleSendMessage} className="input-form">
+            <div className="input-form">
               <input
                 type="text"
                 ref={inputRef}
@@ -323,20 +342,394 @@ const handleClearChat = () => {
                 value={inputMessage}
                 placeholder="Ask about portfolios, IPOs, stocks..."
                 onChange={(e) => setInputMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
                 aria-label="Chat input"
               />
               <button
-                type="submit"
+                onClick={handleSendMessage}
                 className="send-btn"
                 disabled={isLoading || !inputMessage.trim()}
                 aria-label="Send message"
               >
                 {isLoading ? <Loader2 className="loader" /> : <Send />}
               </button>
-            </form>
+            </div>
           </div>
         </main>
       </div>
+      
+      <style>{`
+        /* Improved Modern CSS for Portfolio App */
+
+        body, html {
+          margin: 0;
+          padding: 0;
+          height: 100%;
+          font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          background-color: #f1f4f9;
+          color: #1e1e2f;
+        }
+
+        .portfolio-container {
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
+        }
+
+        /* HEADER */
+        .portfolio-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: linear-gradient(90deg, #1f2937, #111827);
+          padding: 0.75rem 2rem;
+          color: white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+          gap: 1.5rem;
+        }
+
+        .header-left {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          flex: 1;
+        }
+
+        .header-icon {
+          width: 36px;
+          height: 36px;
+          color: #38bdf8;
+        }
+
+        .header-title {
+          font-size: 1.5rem;
+          font-weight: 700;
+          letter-spacing: -0.02em;
+          line-height: 1.2;
+          margin: 0;
+        }
+
+        .header-subtitle {
+          font-size: 0.9rem;
+          color: #cbd5e1;
+          font-weight: 400;
+          margin: 0;
+        }
+
+        .header-status {
+          background-color: #10b981;
+          padding: 0.4rem 0.9rem;
+          border-radius: 20px;
+          font-weight: 600;
+          font-size: 0.8rem;
+          box-shadow: 0 0 10px rgba(16,185,129,0.5);
+          white-space: nowrap;
+        }
+
+        .clear-chat-btn {
+          background: rgba(239, 68, 68, 0.15);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          color: #fca5a5;
+          padding: 0.5rem 1rem;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 0.85rem;
+          font-weight: 600;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .clear-chat-btn:hover {
+          background: rgba(239, 68, 68, 0.25);
+          border-color: rgba(239, 68, 68, 0.5);
+          transform: translateY(-1px);
+        }
+
+        /* CONTENT LAYOUT */
+        .portfolio-content {
+          flex: 1;
+          display: flex;
+          height: calc(100vh - 65px);
+          overflow: hidden;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+          width: 280px;
+          background: #ffffff;
+          border-right: 1px solid #e5e7eb;
+          padding: 1.5rem 1.25rem;
+          display: flex;
+          flex-direction: column;
+          gap: 2rem;
+          box-shadow: 4px 0 18px rgba(0,0,0,0.05);
+        }
+
+        .quick-actions h3, .features-box h3 {
+          font-size: 0.95rem;
+          margin-bottom: 1rem;
+          font-weight: 700;
+          color: #111827;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .action-btn {
+          width: 100%;
+          padding: 0.75rem 1rem;
+          margin-bottom: 0.5rem;
+          border-radius: 10px;
+          background: #eef4ff;
+          border: 1px solid #d0ddff;
+          color: #1e293b;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-size: 0.95rem;
+          font-weight: 600;
+          text-align: left;
+        }
+        .action-btn:hover {
+          background: #dbe7ff;
+          transform: translateX(3px);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .action-btn.danger {
+          background: #ffdadb;
+          border-color: #ff9a9e;
+          color: #b91c1c;
+        }
+        .action-btn.danger:hover {
+          background: #ffb3b7;
+          transform: translateX(3px);
+        }
+
+        .features-box ul {
+          list-style: none;
+          padding-left: 0;
+        }
+
+        .features-box li {
+          margin-bottom: 0.65rem;
+          padding-left: 1.2rem;
+          position: relative;
+          color: #64748b;
+          font-size: 0.9rem;
+          font-weight: 500;
+        }
+
+        .features-box li::before {
+          content: "";
+          width: 8px;
+          height: 8px;
+          background: #60a5fa;
+          border-radius: 50%;
+          position: absolute;
+          left: 0;
+          top: 8px;
+        }
+
+        /* CHAT AREA */
+
+        /* Custom Scrollbar */
+        .messages-box::-webkit-scrollbar {
+          width: 10px;
+        }
+        .messages-box::-webkit-scrollbar-track {
+          background: #e5e7eb;
+          border-radius: 10px;
+        }
+        .messages-box::-webkit-scrollbar-thumb {
+          background: #9ca3af;
+          border-radius: 10px;
+          border: 2px solid #e5e7eb;
+        }
+        .messages-box::-webkit-scrollbar-thumb:hover {
+          background: #6b7280;
+        }
+
+        .chat-area {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          background: #fafbff;
+        }
+
+        .chat-header {
+          display: flex;
+          align-items: center;
+          background: #e4e9ff;
+          padding: 1rem 2rem;
+          border-bottom: 1px solid #c7d2fe;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        .chat-header h2 {
+          margin: 0;
+          font-size: 1.1rem;
+        }
+
+        .chat-header p {
+          margin: 0;
+          font-size: 0.85rem;
+          color: #6b7280;
+        }
+
+        .chat-header-icon {
+          width: 28px;
+          height: 28px;
+          margin-right: 1rem;
+          color: #4f46e5;
+        }
+
+        .messages-box {
+          flex: 1;
+          padding: 1.75rem 2rem;
+          overflow-y: auto;
+          background: #ffffff;
+          border-bottom: 1px solid #cbd5e1;
+        }
+
+        .message-row {
+          display: flex;
+          gap: 0.75rem;
+          margin-bottom: 1.25rem;
+        }
+
+        .user-row { justify-content: flex-end; }
+        .assistant-row { justify-content: flex-start; }
+        .error-row { justify-content: flex-start; }
+
+        .avatar {
+          width: 38px;
+          height: 38px;
+          border-radius: 50%;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          flex-shrink: 0;
+        }
+
+        .user-avatar { background: #2563eb; color: white; }
+        .assistant-avatar { background: #4f46e5; color: white; }
+        .error-avatar { background: #dc2626; color: white; }
+
+        .message-bubble {
+          max-width: 70%;
+          padding: 0.9rem 1.25rem;
+          border-radius: 16px;
+          font-size: 1.08rem;
+          box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+          white-space: pre-wrap;
+        }
+
+        .user-bubble {
+          background: #3b82f6;
+          color: white;
+          border-bottom-right-radius: 4px;
+        }
+
+        .assistant-bubble {
+          background: #f3f4f6;
+          color: #374151;
+          border-bottom-left-radius: 4px;
+        }
+
+        .error-bubble {
+          background: #fee2e2;
+          color: #b91c1c;
+          border-bottom-left-radius: 4px;
+        }
+
+        .message-time {
+          font-size: 0.75rem;
+          opacity: 0.6;
+          margin-top: 0.5rem;
+        }
+
+        .loader {
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        /* INPUT BOX */
+        .input-area {
+          padding: 1rem 2rem;
+          background: #f8fafc;
+          border-top: 1px solid #e2e8f0;
+        }
+
+        .input-form {
+          display: flex;
+          gap: 1rem;
+        }
+
+        .input-field {
+          flex-grow: 1;
+          padding: 0.85rem 1rem;
+          font-size: 1.08rem;
+          border-radius: 14px;
+          background: white;
+          border: 1.6px solid #d1d5db;
+          transition: all 0.2s ease;
+          outline: none;
+        }
+        .input-field:focus {
+          border-color: #6366f1;
+          box-shadow: 0 0 8px rgba(99,102,241,0.3);
+        }
+
+        .send-btn {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: #4f46e5;
+          border: none;
+          color: white;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          cursor: pointer;
+          transition: background 0.2s ease, transform 0.1s ease;
+        }
+        .send-btn:hover:not(:disabled) {
+          background: #4338ca;
+          transform: translateY(-2px);
+        }
+        .send-btn:disabled {
+          background: #a5b4fc;
+          cursor: not-allowed;
+        }
+
+        .link {
+          color: #3b82f6;
+          text-decoration: underline;
+        }
+
+        .link:hover {
+          color: #2563eb;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 900px) {
+          .portfolio-content { flex-direction: column; }
+          .sidebar {
+            width: 100%;
+            border-right: none;
+            border-bottom: 1px solid #e1e4e8;
+          }
+        }
+
+        @media (max-width: 500px) {
+          .header-title { font-size: 1.2rem; }
+          .input-field { font-size: 1rem; }
+          .send-btn { width: 34px; height: 34px; }
+        }
+      `}</style>
     </div>
   );
 };

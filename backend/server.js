@@ -87,7 +87,7 @@ app.use(session({
 const AZURE_CONFIG_FYERS = {
   endpoint: process.env.AZURE_OPENAI_ENDPOINT || "https://your-resource.openai.azure.com/",
   apiKey: process.env.AZURE_OPENAI_API_KEY || "your-api-key",
-  deployment: process.env.AZURE_OPENAI_DEPLOYMENT || "o3-mini",
+  deployment: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o",
   apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview"
 };
 
@@ -95,7 +95,7 @@ const AZURE_CONFIG_FYERS = {
 const AZURE_CONFIG_KITE = {
   endpoint: "https://codestore-ai.openai.azure.com/",
   apiKey: "EvkhikwvmvJYbqnV175XrD7C1ym5yXEsYAb5nEz4mbf2BJPXNWeHJQQJ99BJACHYHv6XJ3w3AAABACOGQydk",
-  deployment: "o3-mini",
+  deployment: "gpt-4o",
   apiVersion: "2024-12-01-preview"
 };
 
@@ -604,7 +604,7 @@ class FyersLangChainAgent {
 
     // Create prompt template
     const prompt = ChatPromptTemplate.fromMessages([
-      ["system", "You are a helpful trading assistant for Fyers broker. You can help users with their trading account, portfolio, orders, and market data While adding symbols to watchlist use format like NSE:TCS-EQ. Use the available tools to answer user questions."],
+      ["system", "ou are a trading assistant for the Fyers broker.Use tools for any request involving orders, positions, holdings, funds, charts, option chain, alerts, or watchlists.Ask for missing details instead of assuming.Only place, modify, or cancel orders when the user gives explicit instructions.For watchlist symbols, always use format like NSE:TCS-EQ with no .NS.If a tool is required, respond ONLY with the tool call.If no tool is needed, reply normally."],
       ["placeholder", "{chat_history}"],
       ["human", "{input}"],
       ["placeholder", "{agent_scratchpad}"]
@@ -622,7 +622,7 @@ class FyersLangChainAgent {
       agent,
       tools: this.tools,
       verbose: true,
-      maxIterations: 5
+      maxIterations: 20
     });
 
     logger.info(`Fyers agent initialized with ${this.tools.length} tools`);
@@ -671,28 +671,29 @@ class FyersLangChainAgent {
     return z.object(zodObject);
   }
 
-  async chat(userMessage) {
-    try {
-      const result = await this.agentExecutor.invoke({
-        input: userMessage,
-        chat_history: this.conversationHistory
-      });
+ async chat(userMessage) {
+  try {
+    const result = await this.agentExecutor.invoke({
+      input: userMessage,
+      chat_history: this.conversationHistory
+    });
 
-      // Update conversation history
-      this.conversationHistory.push(new HumanMessage(userMessage));
-      this.conversationHistory.push(new AIMessage(result.output));
+    // ONLY store the user message and final AI response
+    // NOT the intermediate tool calls and agent scratchpad
+    this.conversationHistory.push(new HumanMessage(userMessage));
+    this.conversationHistory.push(new AIMessage(result.output));
 
-      // Keep only last 10 messages
-      if (this.conversationHistory.length > 10) {
-        this.conversationHistory = this.conversationHistory.slice(-10);
-      }
-
-      return result.output;
-    } catch (error) {
-      logger.error('Error in Fyers chat:', error.message);
-      return `Error: ${error.message}`;
+    // Keep only last 10 messages (5 exchanges)
+    if (this.conversationHistory.length > 10) {
+      this.conversationHistory = this.conversationHistory.slice(-10);
     }
+
+    return result.output;
+  } catch (error) {
+    logger.error('Error in chat:', error.message);
+    return `Error: ${error.message}`;
   }
+}
 
   resetConversation() {
     this.conversationHistory = [];
@@ -1007,7 +1008,7 @@ class KiteLangChainAgent {
 
     // Create prompt template
     const prompt = ChatPromptTemplate.fromMessages([
-      ["system", "You are a helpful trading assistant for Kite/Zerodha broker. You can help users with their trading account, portfolio, orders, and market data. Use the available tools to answer user questions."],
+      ["system", "You are a Kite/Zerodha trading assistant.Use tools for any account, order, portfolio, position, GTT, or market-data request.zAsk for missing details instead of guessing.Only place/modify/cancel orders when the user gives explicit trade instructions.Use market-data tools for prices, tokens, OHLC, quotes, searches.Give analysis when asked, without financial advice.Respond with a tool call only when required; otherwise reply normally."],
       ["placeholder", "{chat_history}"],
       ["human", "{input}"],
       ["placeholder", "{agent_scratchpad}"]
@@ -1025,7 +1026,7 @@ class KiteLangChainAgent {
       agent,
       tools: this.tools,
       verbose: true,
-      maxIterations: 5
+      maxIterations: 20
     });
 
     logger.info(`Kite agent initialized with ${this.tools.length} tools`);
@@ -1074,28 +1075,29 @@ class KiteLangChainAgent {
     return z.object(zodObject);
   }
 
-  async chat(userMessage) {
-    try {
-      const result = await this.agentExecutor.invoke({
-        input: userMessage,
-        chat_history: this.conversationHistory
-      });
+ async chat(userMessage) {
+  try {
+    const result = await this.agentExecutor.invoke({
+      input: userMessage,
+      chat_history: this.conversationHistory
+    });
 
-      // Update conversation history
-      this.conversationHistory.push(new HumanMessage(userMessage));
-      this.conversationHistory.push(new AIMessage(result.output));
+    // ONLY store the user message and final AI response
+    // NOT the intermediate tool calls and agent scratchpad
+    this.conversationHistory.push(new HumanMessage(userMessage));
+    this.conversationHistory.push(new AIMessage(result.output));
 
-      // Keep only last 10 messages
-      if (this.conversationHistory.length > 10) {
-        this.conversationHistory = this.conversationHistory.slice(-10);
-      }
-
-      return result.output;
-    } catch (error) {
-      logger.error('Error in Kite chat:', error.message);
-      return `Error: ${error.message}`;
+    // Keep only last 10 messages (5 exchanges)
+    if (this.conversationHistory.length > 10) {
+      this.conversationHistory = this.conversationHistory.slice(-10);
     }
+
+    return result.output;
+  } catch (error) {
+    logger.error('Error in chat:', error.message);
+    return `Error: ${error.message}`;
   }
+}
 
   resetConversation() {
     this.conversationHistory = [];
@@ -1300,34 +1302,35 @@ class UpstoxLangChainAgent {
       agent,
       tools: this.tools,
       verbose: true,
-      maxIterations: 5
+      maxIterations: 20
     });
 
     logger.info(`Upstox agent initialized with ${this.tools.length} tools`);
   }
 
   async chat(userMessage) {
-    try {
-      const result = await this.agentExecutor.invoke({
-        input: userMessage,
-        chat_history: this.conversationHistory
-      });
+  try {
+    const result = await this.agentExecutor.invoke({
+      input: userMessage,
+      chat_history: this.conversationHistory
+    });
 
-      // Update conversation history
-      this.conversationHistory.push(new HumanMessage(userMessage));
-      this.conversationHistory.push(new AIMessage(result.output));
+    // ONLY store the user message and final AI response
+    // NOT the intermediate tool calls and agent scratchpad
+    this.conversationHistory.push(new HumanMessage(userMessage));
+    this.conversationHistory.push(new AIMessage(result.output));
 
-      // Keep only last 10 messages
-      if (this.conversationHistory.length > 10) {
-        this.conversationHistory = this.conversationHistory.slice(-10);
-      }
-
-      return result.output;
-    } catch (error) {
-      logger.error('Error in Upstox chat:', error.message);
-      return `Error: ${error.message}`;
+    // Keep only last 10 messages (5 exchanges)
+    if (this.conversationHistory.length > 10) {
+      this.conversationHistory = this.conversationHistory.slice(-10);
     }
+
+    return result.output;
+  } catch (error) {
+    logger.error('Error in chat:', error.message);
+    return `Error: ${error.message}`;
   }
+}
 
   resetConversation() {
     this.conversationHistory = [];
@@ -1753,24 +1756,62 @@ app.post('/api/chat/reset', (req, res) => {
       }
     } else if (activeBroker === 'kite') {
       if (kiteAgents.has(sessionId)) {
-        kiteAgents.get(sessionId).resetConversation();
+        kiteAgents.get(sessionId).resetConversation(); 
       }
-    } else if (activeBroker === 'upstox') {
-      if (upstoxAgents.has(sessionId)) {
+    } else if (activeBroker === 'upstox') { 
+      if (upstoxAgents.has(sessionId)) { 
         upstoxAgents.get(sessionId).resetConversation();
-      }
+      } 
     }
-
+ 
     res.json({
-      success: true,
-      message: `Conversation reset for ${activeBroker}`
-    });
+      success: true, 
+      message: `Conversation reset for ${activeBroker}` 
+    }); 
   } catch (error) {
     logger.error('Reset error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
+app.get('/api/chat/history', (req, res) => {
+  const sessionId = getSessionId(req);
+  const activeBroker = getActiveBroker(req);
 
+  try {
+    let history = [];
+    
+    if (activeBroker === 'fyers' && fyersAgents.has(sessionId)) {
+      const agent = fyersAgents.get(sessionId);
+      history = agent.conversationHistory.map(msg => ({
+        role: msg._getType() === 'human' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+    } else if (activeBroker === 'kite' && kiteAgents.has(sessionId)) {
+      const agent = kiteAgents.get(sessionId);
+      history = agent.conversationHistory.map(msg => ({
+        role: msg._getType() === 'human' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+    } else if (activeBroker === 'upstox' && upstoxAgents.has(sessionId)) {
+      const agent = upstoxAgents.get(sessionId);
+      history = agent.conversationHistory.map(msg => ({
+        role: msg._getType() === 'human' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+    }
+
+    res.json({
+      success: true,
+      broker: activeBroker,
+      history,
+      message_count: history.length,
+      max_messages: 5
+    });
+  } catch (error) {
+    logger.error('History fetch error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 // ==================== LOGOUT ====================
 
 app.post('/api/logout', async (req, res) => {
