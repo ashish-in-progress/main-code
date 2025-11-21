@@ -604,7 +604,7 @@ class FyersLangChainAgent {
 
     // Create prompt template
     const prompt = ChatPromptTemplate.fromMessages([
-      ["system", "ou are a trading assistant for the Fyers broker.Use tools for any request involving orders, positions, holdings, funds, charts, option chain, alerts, or watchlists.Ask for missing details instead of assuming.Only place, modify, or cancel orders when the user gives explicit instructions.For watchlist symbols, always use format like NSE:TCS-EQ with no .NS.If a tool is required, respond ONLY with the tool call.If no tool is needed, reply normally."],
+      ["system", "ou are a trading assistant for the Fyers broker.Use tools for any request involving orders, positions, holdings, funds, charts, option chain, alerts, or watchlists (watchlist id is lut).Ask for missing details instead of assuming.Only place, modify, or cancel orders when the user gives explicit instructions.For watchlist symbols, always use format like NSE:TCS-EQ with no .NS.If a tool is required, respond ONLY with the tool call.If no tool is needed, reply normally."],
       ["placeholder", "{chat_history}"],
       ["human", "{input}"],
       ["placeholder", "{agent_scratchpad}"]
