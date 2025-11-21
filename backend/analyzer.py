@@ -273,32 +273,56 @@ class StockAnalyzer:
 # AI ANALYSIS
 # ==========================================
 
+# ==========================================
+# AI ANALYSIS - FIXED VERSION
+# ==========================================
+
 def init_langchain():
-    """Initialize LangChain LLM"""
-    azure_endpoint = os.getenv("azure_endpoint")
-    api_key = os.getenv("api_key")
-    
-    if not azure_endpoint or not api_key:
-        return None
-    
-    llm = AzureChatOpenAI(
-        azure_endpoint=azure_endpoint,
-        api_key=api_key,
-        api_version="2024-12-01-preview",
-        deployment_name="gpt-4"
-    )
-    
-    system_prompt = """You are an expert technical analyst with 20+ years of experience in pattern recognition.
+    """Initialize LangChain LLM with better error handling"""
+    try:
+        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        
+        # Debug logging
+        print(f"Azure Endpoint: {'Set' if azure_endpoint else 'MISSING'}")
+        print(f"API Key: {'Set' if api_key else 'MISSING'}")
+        
+        if not azure_endpoint or not api_key:
+            print("ERROR: Missing Azure credentials in environment variables")
+            print("Required: azure_endpoint, api_key")
+            return None
+        
+        llm = AzureChatOpenAI(
+            azure_endpoint=azure_endpoint,
+            api_key=api_key,
+            api_version="2024-12-01-preview",
+            deployment_name="gpt-4",
+            max_tokens=1000
+        )
+        
+        system_prompt = """You are an expert technical analyst with 20+ years of experience in pattern recognition.
 Your task is to analyze stock patterns and provide actionable insights in a structured format.
 Be specific with numbers and provide clear recommendations."""
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{input}")
-    ])
-    
-    return prompt | llm
-
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", "{input}")
+        ])
+        
+        chain = prompt | llm
+        
+        # Test the chain
+        print("Testing LangChain connection...")
+        test_response = chain.invoke({"input": "Reply with 'OK' if you can read this."})
+        print(f"LangChain test successful: {test_response.content[:50]}")
+        
+        return chain
+        
+    except Exception as e:
+        print(f"ERROR initializing LangChain: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
 def build_pattern_context(stock_data):
     """Build rich context for LLM analysis"""
     if not stock_data:
@@ -324,59 +348,109 @@ def build_pattern_context(stock_data):
         for i, match in enumerate(matches[:3], 1):
             context_parts.append(f"\nMatch #{i}: {match['start_date']} to {match['end_date']}")
             context_parts.append(f"Similarity: {match.get('mmps', 0):.1f}%")
+            
+            # Add MMPS components breakdown
+            components = match.get('mmps_components', {})
+            if components:
+                context_parts.append(f"  - Shape: {components.get('shape', 0):.1f}%")
+                context_parts.append(f"  - Trend: {components.get('trend', 0):.1f}%")
+                context_parts.append(f"  - Structure: {components.get('structure', 0):.1f}%")
     
     if analysis:
         context_parts.append(f"\n=== ALGORITHMIC SIGNAL ===")
         context_parts.append(f"Signal: {analysis.get('signal', 'NEUTRAL')}")
         context_parts.append(f"Confidence: {analysis.get('confidence', 0):.1f}%")
+        context_parts.append(f"Reason: {analysis.get('reason', 'N/A')}")
     
     return "\n".join(context_parts)
 
 def get_ai_insights(stock_data):
-    """Generate AI insights from pattern data"""
+    """Generate AI insights from pattern data with robust error handling"""
+    print("\n=== Starting AI Analysis ===")
+    
+    # Initialize chain
     chain = init_langchain()
     
     if not chain:
+        error_msg = "AI not configured. Check environment variables: azure_endpoint, api_key"
+        print(f"ERROR: {error_msg}")
         return {
-            "error": "AI not configured. Check environment variables.",
-            "analysis": None
+            "error": error_msg,
+            "analysis": "AI analysis unavailable. Please configure Azure OpenAI credentials."
         }
     
+    # Build context
     context = build_pattern_context(stock_data)
+    print(f"Context built: {len(context)} characters")
     
     expert_prompt = f"""Analyze this stock pattern data:\n\n{context}\n\n
 Provide a comprehensive analysis with:
 
 1. **PATTERN IDENTIFICATION**
-   - Technical pattern name
-   - Pattern quality/confidence
+   - Technical pattern name (e.g., Head and Shoulders, Double Bottom, etc.)
+   - Pattern quality/confidence (High/Medium/Low)
 
 2. **STATISTICAL ANALYSIS**
-   - Risk/Reward assessment
-   - Win probability
+   - Risk/Reward assessment based on the patterns
+   - Win probability estimate
 
 3. **RECOMMENDATION**
-   - Clear BUY/SELL/HOLD signal
-   - Entry/Exit strategy
-   - Stop-loss recommendation
+   - Clear BUY/SELL/HOLD signal with rationale
+   - Entry/Exit strategy suggestions
+   - Stop-loss recommendation (specific price levels if possible)
 
 4. **KEY INSIGHTS**
-   - Most important factors
-   - Risk warnings
+   - Top 3 most important factors to consider
+   - Main risk warnings
 
-Format as JSON-like structure for easy parsing."""
+Keep the analysis concise, specific, and actionable."""
     
     try:
+        print("Invoking AI model...")
         response = chain.invoke({"input": expert_prompt})
+        print(f"AI response received: {len(response.content)} characters")
+        
         return {
             "analysis": response.content,
             "error": None
         }
+        
     except Exception as e:
+        error_msg = f"AI invocation failed: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        
         return {
-            "error": str(e),
-            "analysis": None
+            "error": error_msg,
+            "analysis": f"AI analysis failed: {str(e)}"
         }
+def get_match_ai_insight(match, idx, symbol, chain):
+    """Get AI insight for individual pattern match"""
+    if not chain:
+        return "AI analysis unavailable - credentials not configured."
+    
+    try:
+        match_context = f"""Analyze this specific pattern match:
+
+Match #{idx+1} for {symbol}
+- Date Range: {match['start_date']} to {match['end_date']}
+- Similarity Score: {match['mmps']:.1f}%
+
+Pattern Components:
+- Shape Similarity: {match['mmps_components']['shape']:.1f}%
+- Trend Similarity: {match['mmps_components']['trend']:.1f}%
+- Structure Similarity: {match['mmps_components']['structure']:.1f}%
+- DTW Score: {match['mmps_components']['dtw']:.1f}%
+
+Provide a brief 2-3 sentence analysis of what this pattern match suggests for future price movement."""
+        
+        response = chain.invoke({"input": match_context})
+        return response.content
+        
+    except Exception as e:
+        print(f"ERROR getting match insight #{idx+1}: {str(e)}")
+        return f"Analysis unavailable for this match: {str(e)}"
 
 # ==========================================
 # FLASK ROUTES
@@ -457,8 +531,13 @@ def analyze_stock():
             'lookback_days': lookback
         }
         
-        # Get AI insights
+        # Get AI insights (FIXED)
+        print(f"\n=== Generating AI insights for {symbol} ===")
         ai_insights = get_ai_insights(stock_data)
+        print(f"AI insights result: {ai_insights.get('analysis') is not None}")
+        
+        # Initialize chain once for all match insights
+        chain = init_langchain()
         
         # Build enhanced matches with future returns and AI insights
         enhanced_matches = []
@@ -466,24 +545,8 @@ def analyze_stock():
             # Calculate actual historical returns after this pattern
             future_returns = calculate_future_returns(df, match['start_idx'], lookback)
             
-            # Build individual match context for AI
-            match_context = f"""Analyze Match #{idx+1}:
-- Date Range: {match['start_date']} to {match['end_date']}
-- Similarity Score: {match['mmps']:.1f}%
-- Stock: {symbol}
-- Pattern Components: Shape={match['mmps_components']['shape']:.1f}%, Trend={match['mmps_components']['trend']:.1f}%, Structure={match['mmps_components']['structure']:.1f}%
-
-Provide a brief 2-3 sentence analysis of this specific pattern match and what it suggests."""
-            
-            # Get AI insight for this specific match
-            chain = init_langchain()
-            match_ai_insight = None
-            if chain:
-                try:
-                    response = chain.invoke({"input": match_context})
-                    match_ai_insight = response.content
-                except:
-                    match_ai_insight = "AI analysis unavailable for this match."
+            # Get AI insight for this specific match (FIXED)
+            match_ai_insight = get_match_ai_insight(match, idx, symbol, chain)
             
             enhanced_matches.append({
                 "rank": idx + 1,
@@ -518,13 +581,15 @@ Provide a brief 2-3 sentence analysis of this specific pattern match and what it
             
             "ai_report": ai_insights.get('analysis'),
             "report": ai_insights.get('analysis'),  # Fallback field
+            "ai_error": ai_insights.get('error'),  # Include error if any
             
             "predictions": pattern_result.get('predictions', {}),
             
             "metadata": {
                 "total_matches": len(enhanced_matches),
                 "avg_similarity": round(np.mean([m['score'] for m in enhanced_matches]), 2) if enhanced_matches else 0,
-                "generated_at": datetime.now().isoformat()
+                "generated_at": datetime.now().isoformat(),
+                "ai_configured": chain is not None
             }
         }
         
@@ -534,7 +599,7 @@ Provide a brief 2-3 sentence analysis of this specific pattern match and what it
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
+    
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -555,7 +620,7 @@ def home():
                 "method": "GET",
                 "parameters": {
                     "symbol": "Stock symbol (e.g., TCS.NS, AAPL)",
-                    "period": "Time period (1mo, 3mo, 6mo, 1y, 2y, 5y)",
+                    "period": "Time period (1mo, 3mo, 6mo, 1y, 2y, 5y,10y)",
                     "lookback": "Pattern length in days (5-90, default: 30)",
                     "top_n": "Number of matches (1-20, default: 5)"
                 },
