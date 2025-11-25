@@ -3,269 +3,340 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import PortfolioSuggestor from "./PortfolioSuggestor.jsx";
 import StockAnalyzer from "./StockAnalyzer.jsx";
+import PortfolioHoldings from "./PortfolioHoldings.jsx";
 
-// ... paste EVERYTHING from your old App component here
-const API_BASE_URL = 'http://localhost:5000/api';
+// API Configuration
+const API_BASE_URL = "http://localhost:5000/api";
 
-// Configure axios to send credentials (CRITICAL for session management)
+// Configure axios with credentials
 axios.defaults.withCredentials = true;
 axios.defaults.baseURL = API_BASE_URL;
+
 export default function MainApp() {
-  // paste your ENTIRE OLD App() content here
-  const [activeView, setActiveView] = useState('trading'); // 'trading', 'portfolio', 'analyzer'
-  const [activeBroker, setActiveBroker] = useState('fyers');
+  // View Management
+  const [activeView, setActiveView] = useState("trading"); // 'trading', 'holdings', 'portfolio', 'analyzer'
+
+  // Broker State
+  const [activeBroker, setActiveBroker] = useState("fyers");
   const [brokerStatus, setBrokerStatus] = useState({
     fyers: { authenticated: false, active: false },
     kite: { authenticated: false, active: false },
-    upstox: { authenticated: false, active: false }
+    upstox: { authenticated: false, active: false },
   });
 
+  // Chat State
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState('');
+  const [inputMessage, setInputMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Authentication State
   const [loginUrl, setLoginUrl] = useState(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [showManualVerify, setShowManualVerify] = useState(false);
   const [currentBrokerLogin, setCurrentBrokerLogin] = useState(null);
 
+  // User State
+  const [userInfo, setUserInfo] = useState(null);
+
+  // Refs
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  // Auto-scroll to bottom of messages
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-  
+
+  // Initial setup
   useEffect(() => {
+    checkUserSession();
     checkBrokerStatus();
-    
+
+    // Handle OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('login') === 'success') {
-      const broker = urlParams.get('broker');
+    if (urlParams.get("login") === "success") {
+      const broker = urlParams.get("broker");
       if (broker) {
         setActiveBroker(broker);
-        addMessage('system', `Successfully logged in to ${broker.toUpperCase()}!`);
+        addMessage("system", `✅ Successfully logged in to ${broker.toUpperCase()}!`);
       }
       window.history.replaceState({}, document.title, window.location.pathname);
       setTimeout(() => checkBrokerStatus(), 500);
     }
-    
-    if (urlParams.get('error')) {
-      addMessage('error', `Authentication failed: ${urlParams.get('error')}`);
+
+    if (urlParams.get("error")) {
+      addMessage("error", `❌ Authentication failed: ${urlParams.get("error")}`);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
-  
+
+  // Check user session
+  const checkUserSession = async () => {
+    try {
+      const response = await axios.get("/me");
+      if (response.data) {
+        setUserInfo(response.data);
+      }
+    } catch (error) {
+      console.error("Error checking user session:", error);
+    }
+  };
+
+  // Check broker authentication status
   const checkBrokerStatus = async () => {
     try {
-      const response = await axios.get('/broker/status');
+      const response = await axios.get("/broker/status");
       if (response.data) {
         setBrokerStatus(response.data.brokers);
         setActiveBroker(response.data.active_broker);
       }
     } catch (error) {
-      console.error('Error checking broker status:', error);
+      console.error("Error checking broker status:", error);
     }
   };
-  
+
+  // Add message to chat
   const addMessage = (role, content) => {
-    setMessages(prev => [...prev, { role, content, timestamp: new Date() }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role,
+        content,
+        timestamp: new Date(),
+      },
+    ]);
   };
 
-  // ... (Your existing handleBrokerLogin logic remains exactly the same)
+  // Handle broker login
   const handleBrokerLogin = async (broker) => {
     setIsAuthenticating(true);
     setLoginUrl(null);
     setShowManualVerify(false);
     setCurrentBrokerLogin(broker);
-    
+
     try {
-      if (broker === 'fyers') {
-        addMessage('system', 'Connecting to Fyers...');
-        const connectRes = await axios.post('/fyers/connect');
-        
-        if (connectRes.data.success) {
-          const loginRes = await axios.post('/fyers/login');
-          if (loginRes.data.success && loginRes.data.login_url) {
-            setLoginUrl(loginRes.data.login_url);
-            addMessage('system', '🔐 Opening Fyers login window...');
-            
-            const loginWindow = window.open(
-              loginRes.data.login_url, 
-              'Fyers Login',
-              'width=600,height=700'
-            );
-            setShowManualVerify(true);
-            if (!loginWindow || loginWindow.closed) {
-              addMessage('error', '❌ Popup blocked! Please allow popups.');
-            }
-          } else {
-            addMessage('error', 'Failed to get Fyers login URL');
-          }
+      if (broker === "fyers") {
+        addMessage("system", "🔌 Connecting to Fyers...");
+
+        const connectRes = await axios.post("/fyers/connect");
+        if (!connectRes.data.success) {
+          addMessage("error", "❌ Failed to connect to Fyers");
+          return;
+        }
+
+        addMessage("system", "✅ Connected to Fyers MCP");
+
+        const loginRes = await axios.post("/fyers/login");
+        if (!loginRes.data.success || !loginRes.data.login_url) {
+          addMessage("error", "❌ Failed to get Fyers login URL");
+          return;
+        }
+
+        setLoginUrl(loginRes.data.login_url);
+
+        const loginWindow = window.open(
+          loginRes.data.login_url,
+          "Fyers Login",
+          "width=600,height=700,scrollbars=yes"
+        );
+
+        setShowManualVerify(true);
+
+        if (!loginWindow || loginWindow.closed) {
+          addMessage("error", "❌ Popup blocked! Allow popups and try again.");
         } else {
-          addMessage('error', 'Failed to connect to Fyers');
+          addMessage("system", "⏳ Complete login in popup, then click Verify.");
         }
-        
-      } else if (broker === 'kite') {
-        addMessage('system', 'Connecting to Kite...');
-        try {
-          const response = await axios.post('/kite/login', {}, { timeout: 30000 });
-          if (response.data.success && response.data.login_url) {
-            setLoginUrl(response.data.login_url);
-            addMessage('system', '🔐 Opening Kite login window...');
-            const loginWindow = window.open(
-              response.data.login_url,
-              'Kite Login',
-              'width=600,height=700,scrollbars=yes'
-            );
-            setShowManualVerify(true);
-            if (!loginWindow || loginWindow.closed) {
-              addMessage('error', '❌ Popup blocked!');
-            }
-          } else {
-            addMessage('error', response.data.message || 'Failed to get Kite login URL');
-          }
-        } catch (error) {
-            addMessage('error', `Failed to connect to Kite: ${error.message}`);
+      } else if (broker === "kite") {
+        addMessage("system", "🔌 Connecting to Kite/Zerodha...");
+
+        const response = await axios.post("/kite/login");
+        if (!response.data.success || !response.data.login_url) {
+          addMessage("error", "❌ Failed to get Kite login URL");
+          return;
         }
-        
-      } else if (broker === 'upstox') {
-        const response = await axios.get('/upstox/login');
+
+        setLoginUrl(response.data.login_url);
+
+        const win = window.open(
+          response.data.login_url,
+          "Kite Login",
+          "width=600,height=700,scrollbars=yes"
+        );
+
+        setShowManualVerify(true);
+
+        if (!win || win.closed) {
+          addMessage("error", "❌ Popup blocked! Allow popups.");
+        } else {
+          addMessage("system", "⏳ Complete login in popup, then verify.");
+        }
+      } else if (broker === "upstox") {
+        addMessage("system", "🔌 Redirecting to Upstox login...");
+        const response = await axios.get("/upstox/login");
         if (response.data.success && response.data.auth_url) {
           window.location.href = response.data.auth_url;
         } else {
-          addMessage('error', 'Failed to get Upstox auth URL');
+          addMessage("error", "❌ Failed to get Upstox auth URL");
         }
       }
     } catch (error) {
-      console.error('Login error:', error);
-      addMessage('error', `Login failed: ${error.response?.data?.error || error.message}`);
+      console.error("Login error:", error);
+      addMessage("error", `❌ Login failed: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsAuthenticating(false);
     }
   };
-  
+
+  // Handle manual verification after popup login
   const handleManualVerify = async () => {
-    addMessage('system', '🔍 Checking authentication status...');
+    addMessage("system", "🔍 Verifying authentication...");
+
     try {
-      const response = await axios.post(
-        currentBrokerLogin === 'kite' ? '/kite/verify-auth' : '/fyers/verify-auth'
-      );
+      const endpoint =
+        currentBrokerLogin === "kite" ? "/kite/verify-auth" : "/fyers/verify-auth";
+
+      const response = await axios.post(endpoint);
+
       if (response.data.success && response.data.authenticated) {
-        addMessage('system', `✅ ${currentBrokerLogin.toUpperCase()} authentication successful!`);
+        addMessage("system", `✅ ${currentBrokerLogin.toUpperCase()} authenticated!`);
+        addMessage("system", `🤖 AI Agent initialized with ${response.data.tools_count} tools`);
+
         setActiveBroker(currentBrokerLogin);
         setShowManualVerify(false);
         setCurrentBrokerLogin(null);
+
         await checkBrokerStatus();
       } else {
-        addMessage('error', `❌ Authentication not completed.`);
+        addMessage("error", `❌ Authentication incomplete. ${response.data.message || ""}`);
       }
     } catch (error) {
-      addMessage('error', `Verification failed: ${error.response?.data?.error || error.message}`);
+      addMessage("error", `❌ Verification failed: ${error.response?.data?.error || error.message}`);
     }
   };
-  
+
+  // Switch active broker
   const handleBrokerSwitch = async (broker) => {
     if (!brokerStatus[broker]?.authenticated) {
-      addMessage('system', `Please login to ${broker.toUpperCase()} first.`);
+      addMessage("system", `⚠️ Please login to ${broker.toUpperCase()} first.`);
       return;
     }
+
     try {
-      const response = await axios.post('/broker/select', { broker });
+      const response = await axios.post("/broker/select", { broker });
       if (response.data.success) {
         setActiveBroker(broker);
-        addMessage('system', `Switched to ${broker.toUpperCase()}`);
+        addMessage("system", `🔄 Switched to ${broker.toUpperCase()}`);
         await checkBrokerStatus();
-      } else if (response.data.status === 'need_auth') {
-        addMessage('system', response.data.message);
+      } else {
+        addMessage("error", response.data.message || "❌ Failed to switch broker");
       }
     } catch (error) {
-      addMessage('error', `Failed to switch: ${error.message}`);
+      addMessage("error", `❌ Failed to switch: ${error.message}`);
     }
   };
-  
+
+  // Send chat message
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputMessage.trim() || loading) return;
-    
+
     if (!brokerStatus[activeBroker]?.authenticated) {
-      addMessage('system', `Please login to ${activeBroker.toUpperCase()} first.`);
+      addMessage("system", `⚠️ Please login to ${activeBroker.toUpperCase()} first.`);
       return;
     }
-    
+
     const userMessage = inputMessage.trim();
-    setInputMessage('');
-    addMessage('user', userMessage);
+    setInputMessage("");
+    addMessage("user", userMessage);
     setLoading(true);
-    
+
     try {
-      const response = await axios.post('/chat', { message: userMessage });
+      const response = await axios.post("/chat", { message: userMessage });
+
       if (response.data.success) {
-        addMessage('assistant', response.data.response);
+        addMessage("assistant", response.data.response);
       } else {
-        addMessage('error', response.data.error || 'Failed to get response');
+        addMessage("error", response.data.error || "❌ Failed to get response");
       }
     } catch (error) {
-      addMessage('error', `Error: ${error.message}`);
+      addMessage("error", `❌ Error: ${error.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
       inputRef.current?.focus();
     }
   };
-  
+
+  // Reset conversation
   const handleResetChat = async () => {
     try {
-      await axios.post('/chat/reset');
+      await axios.post("/chat/reset");
       setMessages([]);
-      addMessage('system', 'Conversation reset');
+      addMessage("system", "🔄 Conversation reset");
     } catch (error) {
-      addMessage('error', 'Failed to reset conversation');
-    }
-  };
-  
-  const handleLogout = async (broker = 'all') => {
-    try {
-      await axios.post('/logout', { broker });
-      if (broker === 'all') {
-        setMessages([]);
-        setBrokerStatus({
-            fyers: { authenticated: false, active: false },
-            kite: { authenticated: false, active: false },
-            upstox: { authenticated: false, active: false }
-        });
-        addMessage('system', 'Logged out from all brokers');
-      } else {
-        addMessage('system', `Logged out from ${broker.toUpperCase()}`);
-      }
-      await checkBrokerStatus();
-    } catch (error) {
-      addMessage('error', 'Failed to logout');
+      addMessage("error", "❌ Failed to reset conversation");
     }
   };
 
-  // RENDER MESSAGES
+  // Logout from brokers
+  const handleLogout = async (broker = "all") => {
+    try {
+      await axios.post("/broker/logout", { broker });
+
+      if (broker === "all") {
+        setMessages([]);
+        setBrokerStatus({
+          fyers: { authenticated: false, active: false },
+          kite: { authenticated: false, active: false },
+          upstox: { authenticated: false, active: false },
+        });
+        addMessage("system", "🚪 Logged out from all brokers");
+      } else {
+        addMessage("system", `🚪 Logged out from ${broker.toUpperCase()}`);
+      }
+
+      await checkBrokerStatus();
+    } catch (error) {
+      addMessage("error", "❌ Failed to logout");
+    }
+  };
+
+  // Logout user
+  const handleUserLogout = async () => {
+    try {
+      await axios.post("http://localhost:5000/logout", {}, { withCredentials: true });
+      window.location.href = "/";
+    } catch (error) {
+      console.error("User logout error:", error);
+    }
+  };
+
+  // Render messages
   const renderMessage = (msg, index) => {
     const roleClass = {
-      user: 'message-user',
-      assistant: 'message-assistant',
-      system: 'message-system',
-      error: 'message-error'
-    }[msg.role] || 'message-system';
-    
+      user: "message-user",
+      assistant: "message-assistant",
+      system: "message-system",
+      error: "message-error",
+    }[msg.role];
+
     return (
       <div key={index} className={`message ${roleClass}`}>
-        {msg.role !== 'system' && msg.role !== 'error' && (
+        {msg.role !== "system" && msg.role !== "error" && (
           <span className="message-meta">
-            {msg.role === 'user' ? 'You' : `${activeBroker.toUpperCase()} AI`} • {msg.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+            {msg.role === "user" ? "👤 You" : `🤖 ${activeBroker.toUpperCase()} AI`} •{" "}
+            {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
         <div className="message-content">
-          {msg.content.split('\n').map((line, i) => (
+          {msg.content.split("\n").map((line, i) => (
             <React.Fragment key={i}>
-              {line}{i < msg.content.split('\n').length - 1 && <br />}
+              {line}
+              {i < msg.content.split("\n").length - 1 && <br />}
             </React.Fragment>
           ))}
         </div>
@@ -273,86 +344,125 @@ export default function MainApp() {
     );
   };
 
-  // BROKER CARD COMPONENT
+  // Broker Card Component
   const BrokerItem = ({ id, name, status }) => (
-    <div className={`broker-item ${activeBroker === id ? 'active' : ''}`}>
+    <div className={`broker-item ${activeBroker === id ? "active" : ""}`}>
       <div className="broker-info">
-        <div className={`broker-status-dot ${status.authenticated ? 'connected' : ''}`} />
+        <div className={`broker-status-dot ${status.authenticated ? "connected" : ""}`} />
         <span className="broker-name">{name}</span>
       </div>
       <div className="broker-actions">
         {!status.authenticated ? (
-          <button 
+          <button
             className="btn btn-primary btn-sm"
             onClick={() => handleBrokerLogin(id)}
             disabled={isAuthenticating}
           >
-            Connect
+            {isAuthenticating && currentBrokerLogin === id ? "⏳" : "🔗"} Connect
           </button>
         ) : (
           <>
-            <button 
+            <button
               className="btn btn-secondary btn-sm"
               onClick={() => handleBrokerSwitch(id)}
               disabled={activeBroker === id}
             >
-              {activeBroker === id ? 'Active' : 'Switch'}
+              {activeBroker === id ? "✅ Active" : "Switch"}
             </button>
-            <button className="btn btn-sm" onClick={() => handleLogout(id)} title="Logout">🚪</button>
+            <button
+              className="btn btn-sm"
+              onClick={() => handleLogout(id)}
+              style={{ padding: "4px 8px" }}
+            >
+              🚪
+            </button>
           </>
         )}
       </div>
     </div>
   );
 
-  // RENDER LOGIC
+  // Quick Actions
+  const quickActions = [
+    { label: "📊 Holdings", message: "Show my holdings" },
+    { label: "📈 Positions", message: "Show my positions" },
+    { label: "💰 Margin", message: "Check my margin" },
+    { label: "👤 Profile", message: "Show my profile" },
+  ];
+
   return (
     <div className="app">
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <span>🚀</span>
-          <span>TradeUI</span>
-          <button 
-  className="btn btn-danger btn-sm"
-  onClick={() => window.location.reload() || axios.post('/logout')}
->
-  🔓 Logout User
-</button>
-
+          <span className="logo-icon">🚀</span>
+          <span className="logo-text">TradeAI</span>
         </div>
 
+        {/* User Info */}
+        {userInfo && (
+          <div className="user-info-card">
+            <div className="user-avatar">👤</div>
+            <div className="user-details">
+              <span className="user-email">
+                {userInfo.session_id?.substring(0, 8)}...
+              </span>
+              <button className="btn-link" onClick={handleUserLogout}>
+                🔓 Logout
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Broker Accounts */}
         <div className="sidebar-section">
-          <h3>Broker Accounts</h3>
+          <h3>🏦 Broker Accounts</h3>
           <BrokerItem id="fyers" name="Fyers" status={brokerStatus.fyers} />
-          <BrokerItem id="kite" name="Zerodha" status={brokerStatus.kite} />
+          <BrokerItem id="kite" name="Zerodha Kite" status={brokerStatus.kite} />
           <BrokerItem id="upstox" name="Upstox" status={brokerStatus.upstox} />
-          
+
           {showManualVerify && (
-            <div style={{ marginTop: '10px', padding: '10px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
-              <button className="btn btn-success btn-sm" style={{width: '100%'}} onClick={handleManualVerify}>
-                ✅ Verify Login
+            <div className="verify-prompt">
+              <p>Complete login in popup, then:</p>
+              <button
+                className="btn btn-success btn-sm"
+                style={{ width: "100%", marginTop: "8px" }}
+                onClick={handleManualVerify}
+              >
+                Verify Login
               </button>
             </div>
           )}
         </div>
 
+        {/* Quick Actions */}
         <div className="sidebar-section">
-          <h3>Smart Tools</h3>
+          <h3>⚡ Quick Actions</h3>
           <div className="quick-actions-grid">
-            <button className="quick-action-btn" onClick={() => setInputMessage('Show my holdings')}>📊 Holdings</button>
-            <button className="quick-action-btn" onClick={() => setInputMessage('Show my positions')}>📈 Positions</button>
-            <button className="quick-action-btn" onClick={() => setInputMessage('Check margin')}>💰 Margin</button>
-            <button className="quick-action-btn" onClick={() => setInputMessage('Show profile')}>👤 Profile</button>
+            {quickActions.map((action, idx) => (
+              <button
+                key={idx}
+                className="quick-action-btn"
+                onClick={() => setInputMessage(action.message)}
+                disabled={!brokerStatus[activeBroker]?.authenticated}
+              >
+                {action.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="sidebar-section" style={{ marginTop: 'auto' }}>
-           <h3>System</h3>
-           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-             <button className="btn btn-secondary btn-sm" onClick={handleResetChat}>🔄 Reset Chat</button>
-             <button className="btn btn-danger btn-sm" onClick={() => handleLogout('all')}>🚪 Logout All</button>
-           </div>
+        {/* System Actions */}
+        <div className="sidebar-section" style={{ marginTop: "auto" }}>
+          <h3>⚙️ System</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <button className="btn btn-secondary btn-sm" onClick={handleResetChat}>
+              🔄 Reset Chat
+            </button>
+            <button className="btn btn-danger btn-sm" onClick={() => handleLogout("all")}>
+              🚪 Logout All Brokers
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -361,68 +471,123 @@ export default function MainApp() {
         {/* HEADER */}
         <header className="top-header">
           <div className="header-title">
-            <h1>Dashboard</h1>
-            <span className="subtitle">Multi-Broker Portfolio Management</span>
+            <h1>AI Trading Dashboard</h1>
+            <span className="subtitle">
+              Multi-Broker Portfolio Management with AI Insights
+            </span>
           </div>
-          <div className="view-switcher">
-            <button 
-              className={`btn ${activeView === 'trading' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveView('trading')}
+
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div className="view-switcher">
+              <button
+                className={`btn ${activeView === "trading" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setActiveView("trading")}
+              >
+                💬 Assistant
+              </button>
+
+              <button
+                className={`btn ${activeView === "holdings" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setActiveView("holdings")}
+              >
+                📊 Holdings
+              </button>
+
+              <button
+                className={`btn ${activeView === "portfolio" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setActiveView("portfolio")}
+              >
+                🤖 AI Suggestions
+              </button>
+
+              <button
+                className={`btn ${activeView === "analyzer" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setActiveView("analyzer")}
+              >
+                📉 Analyzer
+              </button>
+            </div>
+
+            {/* User Logout Button */}
+            <button
+              className="btn btn-danger"
+              style={{ padding: "10px 14px", fontSize: "13px" }}
+              onClick={handleUserLogout}
             >
-              💬 Assistant
-            </button>
-            <button 
-              className={`btn ${activeView === 'portfolio' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveView('portfolio')}
-            >
-              💼 Portfolio
-            </button>
-            <button 
-              className={`btn ${activeView === 'analyzer' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveView('analyzer')}
-            >
-              📉 Analyzer
+              🔓 Logout
             </button>
           </div>
         </header>
 
         {/* DASHBOARD CONTENT */}
         <div className="dashboard-container">
-          {activeView === 'portfolio' ? (
-            <PortfolioSuggestor onBackToTrading={() => setActiveView('trading')} />
-          ) : activeView === 'analyzer' ? (
-            <StockAnalyzer onBack={() => setActiveView('trading')} />
+          {activeView === "analyzer" ? (
+            // ANALYZER FULL-PAGE OVERLAY (LIGHT THEME)
+            <div className="analyzer-overlay">
+              <div className="analyzer-header">
+                <button
+                  className="analyzer-back-btn"
+                  onClick={() => setActiveView("trading")}
+                >
+                  ← Back
+                </button>
+                <h2 className="analyzer-title">Market Pattern Analyzer</h2>
+              </div>
+              <div className="analyzer-body">
+                {/* Your existing StockAnalyzer component */}
+                <StockAnalyzer />
+              </div>
+            </div>
+          ) : activeView === "holdings" ? (
+            <PortfolioHoldings onBack={() => setActiveView("trading")} />
+          ) : activeView === "portfolio" ? (
+            <PortfolioSuggestor onBackToTrading={() => setActiveView("trading")} />
           ) : (
-            /* TRADING / CHAT VIEW */
+            /* CHAT VIEW */
             <div className="chat-card">
               <div className="chat-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <h2>{activeBroker.charAt(0).toUpperCase() + activeBroker.slice(1)} Assistant</h2>
+                <div className="chat-header-left">
+                  <h2>
+                    {activeBroker.charAt(0).toUpperCase() + activeBroker.slice(1)} AI Assistant
+                  </h2>
+
+                  {brokerStatus[activeBroker]?.authenticated && (
+                    <span className="model-badge">🤖 LangChain GPT</span>
+                  )}
                 </div>
-                <span className={`chat-status ${brokerStatus[activeBroker]?.authenticated ? 'active' : ''}`}>
-                  {brokerStatus[activeBroker]?.authenticated ? '● Live Agent' : '○ Offline'}
+
+                <span
+                  className={`chat-status ${
+                    brokerStatus[activeBroker]?.authenticated ? "active" : ""
+                  }`}
+                >
+                  {brokerStatus[activeBroker]?.authenticated ? "● Live Agent" : "○ Offline"}
                 </span>
               </div>
 
               <div className="messages-area">
                 {messages.length === 0 ? (
                   <div className="empty-state">
-                    <h3>Welcome back!</h3>
-                    <p>Connect a broker from the sidebar and ask me anything about your portfolio.</p>
-                    <div className="features-row">
-                        <div className="feature-card">🤖<br/><strong>AI Trading</strong></div>
-                        <div className="feature-card">📊<br/><strong>Real-time Data</strong></div>
-                    </div>
+                    <div className="empty-icon">🤖</div>
+                    <h3>Welcome to AI Trading Assistant!</h3>
+                    <p>Connect a broker from the sidebar to start trading.</p>
                   </div>
                 ) : (
-                  messages.map((msg, idx) => renderMessage(msg, idx))
+                  <>
+                    {messages.map((msg, idx) => renderMessage(msg, idx))}
+
+                    {loading && (
+                      <div className="message message-assistant">
+                        <div className="typing-indicator">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
-                
-                {loading && (
-                  <div className="message message-assistant">
-                     <div className="typing-indicator"><span></span><span></span><span></span></div>
-                  </div>
-                )}
+
                 <div ref={messagesEndRef} />
               </div>
 
@@ -431,430 +596,776 @@ export default function MainApp() {
                   ref={inputRef}
                   type="text"
                   className="chat-input"
-                  placeholder={brokerStatus[activeBroker]?.authenticated ? "Ask for holdings, positions, or quotes..." : "Please connect broker first..."}
+                  placeholder={
+                    brokerStatus[activeBroker]?.authenticated
+                      ? "Ask about holdings, positions, quotes, or place orders..."
+                      : "Please connect a broker first..."
+                  }
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   disabled={loading || !brokerStatus[activeBroker]?.authenticated}
                 />
-                <button 
-                  type="submit" 
+
+                <button
+                  type="submit"
                   className="btn btn-primary"
-                  disabled={loading || !inputMessage.trim()}
+                  disabled={
+                    loading || !inputMessage.trim() || !brokerStatus[activeBroker]?.authenticated
+                  }
                 >
-                  Send ➔
+                  {loading ? "⏳" : "➤"} Send
                 </button>
               </form>
             </div>
           )}
         </div>
       </div>
-      <style>
-       {
-        `:root {
-  --primary-dark: #0f172a;    /* Deep Navy */
-  --primary-blue: #3b82f6;    /* Brand Blue */
-  --success-green: #10b981;   /* Growth Green */
-  --danger-red: #ef4444;      /* Alert Red */
-  --bg-light: #f1f5f9;        /* Dashboard Background */
-  --card-bg: #ffffff;         /* Card White */
-  --text-main: #1e293b;       /* Dark Slate */
-  --text-muted: #64748b;      /* Muted Gray */
-  --border-color: #e2e8f0;    /* Light Border */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06);
-  --radius-lg: 16px;
-  --radius-md: 8px;
-}
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+      {/* Styles */}
+      <style>{`
+        :root {
+          --primary-dark: #0f172a;
+          --primary-blue: #3b82f6;
+          --success-green: #10b981;
+          --danger-red: #ef4444;
+          --warning-orange: #f59e0b;
+          --bg-light: #f1f5f9;
+          --card-bg: #ffffff;
+          --text-main: #1e293b;
+          --text-muted: #64748b;
+          --border-color: #e2e8f0;
+          --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+          --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+          --radius-lg: 16px;
+          --radius-md: 8px;
+        }
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--bg-light);
-  color: var(--text-main);
-  -webkit-font-smoothing: antialiased;
-}
+        * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+        }
 
-/* Layout Structure */
-.app {
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
-}
+        body {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          background-color: var(--bg-light);
+          color: var(--text-main);
+          -webkit-font-smoothing: antialiased;
+        }
 
-/* Sidebar */
-.sidebar {
-  width: 280px;
-  background-color: var(--card-bg);
-  border-right: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  padding: 24px;
-  overflow-y: auto;
-  flex-shrink: 0;
-}
+        /* Layout */
+        .app {
+          display: flex;
+          height: 100vh;
+          overflow: hidden;
+        }
 
-.sidebar-logo {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--primary-dark);
-  margin-bottom: 32px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+        /* Sidebar */
+        .sidebar {
+          width: 300px;
+          background-color: var(--card-bg);
+          border-right: 1px solid var(--border-color);
+          display: flex;
+          flex-direction: column;
+          padding: 24px;
+          overflow-y: auto;
+          flex-shrink: 0;
+        }
 
-.sidebar-section {
-  margin-bottom: 32px;
-}
+        .sidebar-logo {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 24px;
+          padding-bottom: 20px;
+          border-bottom: 2px solid var(--border-color);
+        }
 
-.sidebar-section h3 {
-  font-size: 12px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  letter-spacing: 1px;
-  margin-bottom: 16px;
-  font-weight: 600;
-}
+        .logo-icon {
+          font-size: 32px;
+        }
 
-/* Broker List Items */
-.broker-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  background: var(--card-bg);
-  margin-bottom: 10px;
-  transition: all 0.2s ease;
-}
+        .logo-text {
+          font-size: 24px;
+          font-weight: 800;
+          background: linear-gradient(135deg, var(--primary-dark), var(--primary-blue));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
 
-.broker-item.active {
-  border-color: var(--primary-blue);
-  background-color: #eff6ff; /* Very light blue */
-}
+        .user-info-card {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          padding: 16px;
+          border-radius: var(--radius-md);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 24px;
+          color: white;
+        }
 
-.broker-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+        .user-avatar {
+          width: 40px;
+          height: 40px;
+          background: rgba(255,255,255,0.2);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+        }
 
-.broker-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--danger-red);
-}
+        .user-details {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
 
-.broker-status-dot.connected {
-  background-color: var(--success-green);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-}
+        .user-email {
+          font-size: 12px;
+          font-weight: 600;
+          opacity: 0.9;
+        }
 
-.broker-name {
-  font-weight: 600;
-  font-size: 14px;
-}
+        .btn-link {
+          background: none;
+          border: none;
+          color: white;
+          font-size: 11px;
+          cursor: pointer;
+          text-align: left;
+          padding: 0;
+          text-decoration: underline;
+        }
 
-.broker-actions {
-  display: flex;
-  gap: 6px;
-}
+        .sidebar-section {
+          margin-bottom: 28px;
+        }
 
-/* Buttons */
-.btn {
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  font-weight: 500;
-  font-size: 13px;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
+        .sidebar-section h3 {
+          font-size: 11px;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          letter-spacing: 1.2px;
+          margin-bottom: 14px;
+          font-weight: 700;
+        }
 
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
-}
+        /* Broker Items */
+        .broker-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 12px;
+          border-radius: var(--radius-md);
+          border: 1.5px solid var(--border-color);
+          background: var(--card-bg);
+          margin-bottom: 10px;
+          transition: all 0.2s ease;
+        }
 
-.btn-primary {
-  background-color: var(--primary-dark);
-  color: white;
-}
-.btn-primary:hover { background-color: #1e293b; }
+        .broker-item:hover {
+          border-color: var(--primary-blue);
+          transform: translateX(2px);
+        }
 
-.btn-success {
-  background-color: var(--success-green);
-  color: white;
-}
+        .broker-item.active {
+          border-color: var(--primary-blue);
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
 
-.btn-warning {
-  background-color: #f59e0b;
-  color: white;
-}
+        .broker-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
 
-.btn-secondary {
-  background-color: #f1f5f9;
-  color: var(--text-main);
-}
-.btn-secondary:hover { background-color: #e2e8f0; }
+        .broker-status-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background-color: var(--danger-red);
+          transition: all 0.3s;
+        }
 
-.btn-danger {
-  background-color: #fee2e2;
-  color: var(--danger-red);
-}
-.btn-danger:hover { background-color: #fecaca; }
+        .broker-status-dot.connected {
+          background-color: var(--success-green);
+          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+          animation: pulse 2s infinite;
+        }
 
-/* Main Content Area */
-.main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background-color: var(--bg-light);
-}
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
 
-/* Top Header */
-.top-header {
-  height: 70px;
-  background-color: var(--card-bg);
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 32px;
-}
+        .broker-name {
+          font-weight: 600;
+          font-size: 14px;
+          color: var(--text-main);
+        }
 
-.header-title h1 {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-main);
-}
+        .broker-actions {
+          display: flex;
+          gap: 6px;
+        }
 
-.header-title .subtitle {
-  font-size: 13px;
-  color: var(--text-muted);
-}
+        /* Verify Prompt */
+        .verify-prompt {
+          background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+          padding: 14px;
+          border-radius: var(--radius-md);
+          margin-top: 12px;
+          border: 1px solid #6ee7b7;
+        }
 
-.view-switcher {
-  display: flex;
-  gap: 12px;
-}
+        .verify-prompt p {
+          font-size: 12px;
+          color: #065f46;
+          font-weight: 600;
+          margin-bottom: 8px;
+        }
 
-/* Dashboard Grid */
-.dashboard-container {
-  padding: 24px;
-  height: calc(100vh - 70px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
+        /* Buttons */
+        .btn {
+          padding: 10px 18px;
+          border-radius: var(--radius-md);
+          font-weight: 600;
+          font-size: 13px;
+          cursor: pointer;
+          border: none;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
 
-/* Chat Interface Card */
-.chat-card {
-  background: var(--card-bg);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0; /* Critical for flex nesting */
-}
+        .btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
 
-.chat-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+        .btn-sm {
+          padding: 6px 12px;
+          font-size: 12px;
+        }
 
-.chat-status {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 20px;
-  background: #f1f5f9;
-  color: var(--text-muted);
-}
+        .btn-primary {
+          background: linear-gradient(135deg, var(--primary-dark), #1e293b);
+          color: white;
+          box-shadow: var(--shadow-sm);
+        }
 
-.chat-status.active {
-  background: #d1fae5;
-  color: #065f46;
-}
+        .btn-primary:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: var(--shadow-md);
+        }
 
-.messages-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-  background-color: #f8fafc;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+        .btn-success {
+          background: var(--success-green);
+          color: white;
+        }
 
-/* Message Bubbles */
-.message {
-  max-width: 80%;
-  padding: 16px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  position: relative;
-  animation: fadeIn 0.3s ease;
-}
+        .btn-secondary {
+          background: #f1f5f9;
+          color: var(--text-main);
+        }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+        .btn-secondary:hover:not(:disabled) {
+          background: #e2e8f0;
+        }
 
-.message-user {
-  align-self: flex-end;
-  background-color: var(--primary-dark);
-  color: white;
-  border-bottom-right-radius: 2px;
-}
+        .btn-danger {
+          background: #fee2e2;
+          color: var(--danger-red);
+        }
 
-.message-assistant {
-  align-self: flex-start;
-  background-color: white;
-  border: 1px solid var(--border-color);
-  color: var(--text-main);
-  border-bottom-left-radius: 2px;
-  box-shadow: var(--shadow-sm);
-}
+        .btn-danger:hover:not(:disabled) {
+          background: #fecaca;
+        }
 
-.message-system {
-  align-self: center;
-  background-color: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  text-align: center;
-  max-width: 100%;
-  padding: 8px;
-  border: none;
-}
+        /* Quick Actions */
+        .quick-actions-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
 
-.message-error {
-  align-self: center;
-  background-color: #fef2f2;
-  color: var(--danger-red);
-  border: 1px solid #fecaca;
-}
+        .quick-action-btn {
+          background: white;
+          border: 1.5px solid var(--border-color);
+          padding: 12px 8px;
+          border-radius: var(--radius-md);
+          font-size: 11px;
+          color: var(--text-main);
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: center;
+          font-weight: 500;
+        }
 
-.message-meta {
-  font-size: 11px;
-  margin-bottom: 4px;
-  opacity: 0.7;
-  display: block;
-}
+        .quick-action-btn:hover:not(:disabled) {
+          border-color: var(--primary-blue);
+          background: #eff6ff;
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-sm);
+        }
 
-/* Input Area */
-.input-area {
-  padding: 20px;
-  background: white;
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  gap: 12px;
-}
+        .quick-action-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
 
-.chat-input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-  background: #f8fafc;
-}
+        /* Main Content */
+        .main-content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          background: var(--bg-light);
+        }
 
-.chat-input:focus {
-  border-color: var(--primary-blue);
-  background: white;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
+        /* Header */
+        .top-header {
+          height: 80px;
+          background: var(--card-bg);
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 32px;
+          box-shadow: var(--shadow-sm);
+        }
 
-/* Quick Actions */
-.quick-actions-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
+        .header-title h1 {
+          font-size: 20px;
+          font-weight: 700;
+          color: var(--text-main);
+          margin-bottom: 4px;
+        }
 
-.quick-action-btn {
-  background: white;
-  border: 1px solid var(--border-color);
-  padding: 10px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  color: var(--text-main);
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: left;
-}
+        .header-title .subtitle {
+          font-size: 13px;
+          color: var(--text-muted);
+        }
 
-.quick-action-btn:hover {
-  border-color: var(--primary-dark);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
-}
+        .view-switcher {
+          display: flex;
+          gap: 12px;
+        }
 
-/* Empty State */
-.empty-state {
-  text-align: center;
-  padding: 40px;
-  color: var(--text-muted);
-}
+        /* Dashboard */
+        .dashboard-container {
+          padding: 24px;
+          height: calc(100vh - 80px);
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+        }
 
-.features-row {
-  display: flex;
-  gap: 20px;
-  justify-content: center;
-  margin-top: 30px;
-}
+        /* Chat Card */
+        .chat-card {
+          background: var(--card-bg);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-md);
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          min-height: 0;
+        }
 
-.feature-card {
-  background: white;
-  padding: 20px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  width: 200px;
-  text-align: center;
-}
+        .chat-header {
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+        }
 
-/* Loading Dots */
-.typing-indicator span {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background-color: var(--text-muted);
-  border-radius: 50%;
-  margin: 0 2px;
-  animation: bounce 1.4s infinite ease-in-out both;
-}
-.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
-.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        .chat-header-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
 
-@keyframes bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
-}`
-       }
-      </style>
+        .chat-header h2 {
+          font-size: 18px;
+          font-weight: 700;
+        }
+
+        .model-badge {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 4px 10px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 600;
+        }
+
+        .chat-status {
+          font-size: 12px;
+          font-weight: 600;
+          padding: 6px 14px;
+          border-radius: 20px;
+          background: #f1f5f9;
+          color: var(--text-muted);
+        }
+
+        .chat-status.active {
+          background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+          color: #065f46;
+          animation: pulse 2s infinite;
+        }
+
+        /* Messages Area */
+        .messages-area {
+          flex: 1;
+          overflow-y: auto;
+          padding: 24px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        /* Messages */
+        .message {
+          max-width: 75%;
+          padding: 14px 18px;
+          border-radius: 16px;
+          font-size: 14px;
+          line-height: 1.6;
+          position: relative;
+          animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-user {
+          align-self: flex-end;
+          background: linear-gradient(135deg, var(--primary-dark), #1e293b);
+          color: white;
+          border-bottom-right-radius: 4px;
+          box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.3);
+        }
+
+        .message-assistant {
+          align-self: flex-start;
+          background: white;
+          border: 1px solid var(--border-color);
+          color: var(--text-main);
+          border-bottom-left-radius: 4px;
+          box-shadow: var(--shadow-sm);
+        }
+
+        .message-system {
+          align-self: center;
+          background: #fffbeb;
+          color: #92400e;
+          border: 1px solid #fde047;
+          font-size: 13px;
+          text-align: center;
+          max-width: 100%;
+          padding: 10px 16px;
+        }
+
+        .message-error {
+          align-self: center;
+          background: #fef2f2;
+          color: var(--danger-red);
+          border: 1px solid #fecaca;
+          max-width: 100%;
+        }
+
+        .message-meta {
+          font-size: 11px;
+          margin-bottom: 6px;
+          opacity: 0.75;
+          display: block;
+          font-weight: 600;
+        }
+
+        /* Empty State */
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 60px 40px;
+          text-align: center;
+          height: 100%;
+        }
+
+        .empty-icon {
+          font-size: 64px;
+          margin-bottom: 24px;
+          animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+
+        .empty-state h3 {
+          font-size: 24px;
+          margin-bottom: 12px;
+          color: var(--text-main);
+        }
+
+        .empty-state p {
+          color: var(--text-muted);
+          margin-bottom: 32px;
+          font-size: 15px;
+        }
+
+        .features-row {
+          display: flex;
+          gap: 20px;
+          justify-content: center;
+          margin-bottom: 40px;
+          flex-wrap: wrap;
+        }
+
+        .feature-card {
+          background: white;
+          padding: 24px 20px;
+          border-radius: var(--radius-lg);
+          border: 2px solid var(--border-color);
+          width: 180px;
+          text-align: center;
+          transition: all 0.3s;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .feature-card:hover {
+          transform: translateY(-4px);
+          border-color: var(--primary-blue);
+          box-shadow: var(--shadow-md);
+        }
+
+        .feature-icon {
+          font-size: 32px;
+          margin-bottom: 8px;
+        }
+
+        .feature-card strong {
+          display: block;
+          font-size: 15px;
+          color: var(--text-main);
+          margin-bottom: 4px;
+        }
+
+        .feature-card span:last-child {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .getting-started {
+          background: white;
+          padding: 24px;
+          border-radius: var(--radius-lg);
+          border: 2px solid var(--border-color);
+          text-align: left;
+          max-width: 500px;
+        }
+
+        .getting-started h4 {
+          margin-bottom: 16px;
+          color: var(--text-main);
+          font-size: 16px;
+        }
+
+        .getting-started ol {
+          padding-left: 24px;
+          color: var(--text-muted);
+          line-height: 1.8;
+        }
+
+        .getting-started li {
+          margin-bottom: 8px;
+        }
+
+        /* Typing Indicator */
+        .typing-indicator {
+          display: flex;
+          gap: 4px;
+          padding: 8px;
+        }
+
+        .typing-indicator span {
+          display: inline-block;
+          width: 8px;
+          height: 8px;
+          background-color: var(--text-muted);
+          border-radius: 50%;
+          animation: bounce-typing 1.4s infinite ease-in-out both;
+        }
+
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce-typing {
+          0%, 80%, 100% { transform: scale(0); }
+          40% { transform: scale(1); }
+        }
+
+        /* Input Area */
+        .input-area {
+          padding: 20px 24px;
+          background: white;
+          border-top: 1px solid var(--border-color);
+          display: flex;
+          gap: 12px;
+        }
+
+        .chat-input {
+          flex: 1;
+          padding: 14px 18px;
+          border: 2px solid var(--border-color);
+          border-radius: var(--radius-md);
+          font-size: 14px;
+          outline: none;
+          transition: all 0.2s;
+          background: #f8fafc;
+          font-family: inherit;
+        }
+
+        .chat-input:focus {
+          border-color: var(--primary-blue);
+          background: white;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .chat-input:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Analyzer Overlay (light, full-page inside main content) */
+        .analyzer-overlay {
+          background: var(--card-bg);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-md);
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          animation: analyzerSlideIn 0.3s ease-out;
+        }
+
+        @keyframes analyzerSlideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+
+        .analyzer-header {
+          height: 64px;
+          padding: 0 24px;
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          background: #f8fafc;
+        }
+
+        .analyzer-back-btn {
+          padding: 8px 14px;
+          background: #e5e7eb;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          border: 1px solid #d1d5db;
+          color: var(--text-main);
+        }
+
+        .analyzer-back-btn:hover {
+          background: #d1d5db;
+        }
+
+        .analyzer-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--text-main);
+        }
+
+        .analyzer-body {
+          flex: 1;
+          overflow-y: auto;
+          background: #f3f4f6;
+          padding: 16px 20px;
+          border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: #e2e8f0;
+          border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+          .sidebar {
+            width: 260px;
+          }
+
+          .features-row {
+            flex-direction: column;
+            align-items: center;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .sidebar {
+            position: fixed;
+            left: -300px;
+            z-index: 1000;
+            transition: left 0.3s;
+          }
+
+          .app {
+            flex-direction: column;
+          }
+
+          .quick-actions-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .view-switcher {
+            flex-wrap: wrap;
+          }
+        }
+      `}</style>
     </div>
   );
 }

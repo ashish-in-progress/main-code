@@ -1,11 +1,11 @@
-// A cleaner, simplified, more modular rewrite of your StockDashboard component
-// Focus: clearer structure, reduced visual clutter, better grouping, cleaner JSX
-// Note: You will still need to re-integrate API types and your CSS if needed.
+// StockDashboard.jsx
+// PatternAI Pro – Light theme, embeddable dashboard (no Tailwind)
 
 import React, { useState } from "react";
 import Plot from "react-plotly.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
 import {
   Search,
   TrendingUp,
@@ -17,17 +17,18 @@ import {
   ChevronUp,
   BarChart3,
   Target,
-  TrendingDown,
   Sparkles,
   CheckCircle,
   XCircle,
 } from "lucide-react";
 
-const API_BASE_URL = "http://localhost:8000";
 import "./analyzer.css";
 
-// NOTE: Next step: apply full Tailwind + shadcn/ui design system and match PatternAI UI
-// This placeholder marks where we'll begin integrating shadcn primitives.
+const API_BASE_URL = "http://localhost:8000";
+
+// ==============================
+// ROOT DASHBOARD
+// ==============================
 export default function StockDashboard() {
   const [symbol, setSymbol] = useState("");
   const [data, setData] = useState(null);
@@ -75,78 +76,166 @@ export default function StockDashboard() {
   };
 
   const signalColor = {
-    BUY: "text-emerald-700 bg-emerald-50 border-emerald-200",
-    SELL: "text-rose-700 bg-rose-50 border-rose-200",
-    HOLD: "text-amber-700 bg-amber-50 border-amber-200",
-    NEUTRAL: "text-slate-700 bg-slate-50 border-slate-200",
+    BUY: "signal-buy",
+    SELL: "signal-sell",
+    HOLD: "signal-hold",
+    NEUTRAL: "signal-neutral",
   };
 
   const getSignalColor = (s) => signalColor[s] || signalColor.NEUTRAL;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
+    <DashboardShell>
+      {/* Top header / brand bar */}
       <Header />
 
-      <SearchSection
-        symbol={symbol}
-        setSymbol={setSymbol}
-        period={period}
-        setPeriod={setPeriod}
-        lookback={lookback}
-        setLookback={setLookback}
-        topN={topN}
-        setTopN={setTopN}
-        loading={loading}
-        fetchData={fetchData}
-        error={error}
-      />
+      <div className="dashboard-section-stack">
+        {/* Search + controls in a hero-style card */}
+        <Card className="card-hero">
+          <SearchSection
+            symbol={symbol}
+            setSymbol={setSymbol}
+            period={period}
+            setPeriod={setPeriod}
+            lookback={lookback}
+            setLookback={setLookback}
+            topN={topN}
+            setTopN={setTopN}
+            loading={loading}
+            fetchData={fetchData}
+            error={error}
+          />
+        </Card>
 
-      {data && (
-        <div className="max-w-7xl mx-auto px-4">
-          <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
+        {data ? (
+          <main className="dashboard-main">
+            <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
-          {activeTab === "overview" && (
-            <OverviewTab data={data} getSignalColor={getSignalColor} />
-          )}
+            {activeTab === "overview" && (
+              <Card
+                title="Market overview"
+                subtitle="Key indicators and price action"
+              >
+                <OverviewTab data={data} getSignalColor={getSignalColor} />
+              </Card>
+            )}
 
-          {activeTab === "patterns" && (
-            <PatternsTab
-              data={data}
-              expandedMatch={expandedMatch}
-              setExpandedMatch={setExpandedMatch}
-            />
-          )}
+            {activeTab === "patterns" && (
+              <Card
+                title="Historical pattern matches"
+                subtitle="Top similar periods from history and their future outcomes"
+              >
+                <PatternsTab
+                  data={data}
+                  expandedMatch={expandedMatch}
+                  setExpandedMatch={setExpandedMatch}
+                />
+              </Card>
+            )}
 
-          {activeTab === "predictions" && <PredictionsTab data={data} />}
+            {activeTab === "predictions" && (
+              <Card
+                title="Forecasts & scenarios"
+                subtitle="Scenario-based return projections based on matched patterns"
+              >
+                <PredictionsTab data={data} />
+              </Card>
+            )}
 
-          {activeTab === "ai-report" && <AiReportTab data={data} />}
-        </div>
-      )}
+            {activeTab === "ai-report" && (
+              <Card className="card-ai-report">
+                <AiReportTab data={data} />
+              </Card>
+            )}
+          </main>
+        ) : (
+          <EmptyState />
+        )}
+      </div>
+    </DashboardShell>
+  );
+}
+
+// ==============================
+// LAYOUT PRIMITIVES
+// ==============================
+function DashboardShell({ children }) {
+  return (
+    <div className="dashboard-shell">
+      <div className="dashboard-inner">{children}</div>
     </div>
   );
 }
 
-// -------------------------------
+function Card({ title, subtitle, children, className = "" }) {
+  return (
+    <section className={`card ${className}`}>
+      {(title || subtitle) && (
+        <header className="card-header">
+          {title && <h2 className="card-title">{title}</h2>}
+          {subtitle && <p className="card-subtitle">{subtitle}</p>}
+        </header>
+      )}
+      {children}
+    </section>
+  );
+}
+
+// ==============================
 // HEADER
-// -------------------------------
+// ==============================
 function Header() {
   return (
-    <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-3">
-        <div className="bg-indigo-600 p-2 rounded-lg">
-          <TrendingUp className="w-5 h-5 text-white" />
+    <header className="dashboard-header">
+      <div className="header-left">
+        <div className="header-icon">
+          <TrendingUp className="icon-md icon-inverse" />
         </div>
-        <h1 className="text-xl font-bold tracking-tight">
-          PatternAI <span className="text-indigo-600">Pro</span>
-        </h1>
+        <div>
+          <h1 className="header-title">
+            PatternAI <span className="header-title-accent">Pro</span>
+          </h1>
+          <p className="header-subtitle">
+            AI-powered pattern recognition &amp; market forecasting
+          </p>
+        </div>
       </div>
-    </div>
+    </header>
   );
 }
 
-// -------------------------------
+// ==============================
+// EMPTY STATE
+// ==============================
+function EmptyState() {
+  return (
+    <Card
+      title="Start with a symbol"
+      subtitle="Analyze any stock by entering its ticker above. PatternAI will search history for similar regimes and generate forecasts."
+    >
+      <div className="empty-state">
+        <div className="empty-state-icon">
+          <Sparkles className="icon-lg icon-main" />
+        </div>
+        <div>
+          <p className="empty-state-text">
+            Try symbols like <span className="empty-state-symbol">AAPL</span>,{" "}
+            <span className="empty-state-symbol">TSLA</span>, or{" "}
+            <span className="empty-state-symbol">MSFT</span>.
+          </p>
+          <p className="empty-state-caption">
+            Pattern matching runs over the selected window and compares regimes
+            across history.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ==============================
 // SEARCH + CONTROLS
-// -------------------------------
+// ==============================
 function SearchSection(props) {
   const {
     symbol,
@@ -163,69 +252,94 @@ function SearchSection(props) {
   } = props;
 
   return (
-    <div className="bg-white border-b border-slate-200 pt-8 pb-10 mb-8 shadow-sm">
-      <div className="max-w-4xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-extrabold">Analyze Market Patterns</h2>
-          <p className="text-slate-500">AI-driven historical similarity search</p>
+    <div className="search-section">
+      <div className="search-heading-row">
+        <div>
+          <h2 className="search-title">Analyze market patterns</h2>
+          <p className="search-subtitle">
+            Historical similarity search with AI commentary and scenario
+            projections.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={fetchData} className="search-form">
+        {/* Search bar */}
+        <div className="search-input-wrapper">
+          <Search className="search-input-icon" />
+          <input
+            className="search-input"
+            placeholder="Enter ticker (e.g. AAPL)"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+          />
+          <button
+            type="submit"
+            disabled={loading || !symbol}
+            className={`search-button ${loading || !symbol ? "is-disabled" : ""}`}
+          >
+            {loading ? "Scanning..." : "Analyze"}
+            {!loading && <Sparkles className="icon-sm" />}
+          </button>
         </div>
 
-        <form onSubmit={fetchData} className="space-y-6">
-          <div className="relative max-w-2xl mx-auto">
-            <Search className="absolute left-4 top-3 text-slate-400" />
-            <input
-              className="block w-full pl-12 pr-32 py-4 bg-slate-50 border rounded-2xl text-lg"
-              placeholder="AAPL"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-            />
-            <button
-              type="submit"
-              disabled={loading || !symbol}
-              className="absolute right-2 top-2 h-12 px-6 bg-indigo-600 rounded-xl text-white flex items-center gap-2"
-            >
-              {loading ? "Scanning..." : "Analyze"}
-              {!loading && <Sparkles className="w-4 h-4" />}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto pt-2">
-            <Select label="Period" value={period} onChange={setPeriod} options={[
+        {/* Controls */}
+        <div className="search-controls-grid">
+          <Select
+            label="History window"
+            value={period}
+            onChange={setPeriod}
+            options={[
               ["1mo", "1 Month"],
               ["3mo", "3 Months"],
               ["6mo", "6 Months"],
               ["1y", "1 Year"],
               ["2y", "2 Years"],
               ["5y", "5 Years"],
-            ]} />
+              ["10y","10 years"]
+            ]}
+          />
 
-            <NumberInput label="Lookback (Days)" value={lookback} setValue={setLookback} min={5} max={90} />
-            <NumberInput label="Matches" value={topN} setValue={setTopN} min={1} max={20} />
-          </div>
-        </form>
+          <NumberInput
+            label="Lookback (days)"
+            value={lookback}
+            setValue={setLookback}
+            min={5}
+            max={90}
+          />
+          <NumberInput
+            label="Top matches"
+            value={topN}
+            setValue={setTopN}
+            min={1}
+            max={20}
+          />
+        </div>
+      </form>
 
-        {error && (
-          <div className="mt-6 p-4 bg-rose-50 border border-rose-300 rounded-xl flex items-center gap-3 text-rose-700">
-            <AlertCircle className="w-5 h-5" />
-            <p>{error}</p>
-          </div>
-        )}
-      </div>
+      {error && (
+        <div className="error-banner">
+          <AlertCircle className="icon-sm" />
+          <p>{error}</p>
+        </div>
+      )}
     </div>
   );
 }
 
 function Select({ label, value, onChange, options }) {
   return (
-    <div className="space-y-1">
-      <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>
+    <div className="field">
+      <label className="field-label">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full p-3 bg-white border rounded-xl"
+        className="field-select"
       >
         {options.map(([val, txt]) => (
-          <option value={val} key={val}>{txt}</option>
+          <option value={val} key={val}>
+            {txt}
+          </option>
         ))}
       </select>
     </div>
@@ -234,23 +348,23 @@ function Select({ label, value, onChange, options }) {
 
 function NumberInput({ label, value, setValue, min, max }) {
   return (
-    <div className="space-y-1">
-      <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>
+    <div className="field">
+      <label className="field-label">{label}</label>
       <input
         type="number"
         min={min}
         max={max}
         value={value}
-        onChange={(e) => setValue(parseInt(e.target.value))}
-        className="w-full p-3 bg-white border rounded-xl"
+        onChange={(e) => setValue(parseInt(e.target.value || "0", 10))}
+        className="field-input"
       />
     </div>
   );
 }
 
-// -------------------------------
+// ==============================
 // TABS
-// -------------------------------
+// ==============================
 function Tabs({ activeTab, setActiveTab }) {
   const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
@@ -260,28 +374,31 @@ function Tabs({ activeTab, setActiveTab }) {
   ];
 
   return (
-    <div className="flex overflow-x-auto gap-6 border-b border-slate-200 mb-8 pb-1">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => setActiveTab(t.id)}
-          className={`flex items-center gap-2 pb-3 px-1 font-semibold ${
-            activeTab === t.id ? "text-indigo-600 border-b-2 border-indigo-600" : "text-slate-500"
-          }`}
-        >
-          <t.icon className="w-4 h-4" /> {t.label}
-        </button>
-      ))}
-    </div>
+    <nav className="tabs-nav">
+      {tabs.map((t) => {
+        const ActiveIcon = t.icon;
+        const isActive = activeTab === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`tab-button ${isActive ? "tab-button-active" : ""}`}
+          >
+            <ActiveIcon className="icon-sm" />
+            {t.label}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
-// -------------------------------
+// ==============================
 // OVERVIEW TAB
-// -------------------------------
+// ==============================
 function OverviewTab({ data, getSignalColor }) {
   return (
-    <div className="space-y-6 animate-in fade-in">
+    <div className="overview-layout">
       <Metrics data={data} getSignalColor={getSignalColor} />
       <MainCharts data={data} />
     </div>
@@ -289,69 +406,177 @@ function OverviewTab({ data, getSignalColor }) {
 }
 
 function Metrics({ data, getSignalColor }) {
-  const d = data.indicators;
-  const a = data.analysis;
+  const d = data.indicators || {};
+  const a = data.analysis || {};
 
+  const priceChangeClass =
+    d.change_1d != null
+      ? d.change_1d >= 0
+        ? "metric-subvalue-positive"
+        : "metric-subvalue-negative"
+      : "metric-subvalue-neutral";
+function getCurrencySymbol(symbol) {
+  if (!symbol) return "$"; // default
+
+  symbol = symbol.toUpperCase();
+
+  if (symbol.endsWith(".NS") || symbol.endsWith(".BO")) {
+    return "₹"; // NSE/BSE use INR
+  }
+  return "$"; // everything else USD
+}
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="metrics-grid">
       <MetricCard
         label="Price"
-        value={`$${d?.current_price?.toFixed(2)}`}
-        subValue={`${d?.change_1d >= 0 ? "+" : ""}${d?.change_1d?.toFixed(2)}%`}
-        subColor={d?.change_1d >= 0 ? "text-emerald-600" : "text-rose-600"}
+        value={
+  d.current_price != null
+    ? `${getCurrencySymbol(data.symbol)}${d.current_price.toFixed(2)}`
+    : "--"
+}
+        subValue={
+          d.change_1d != null
+            ? `${d.change_1d >= 0 ? "+" : ""}${d.change_1d.toFixed(2)}%`
+            : null
+        }
+        subColor={priceChangeClass}
       />
       <MetricCard
-        label="RSI"
-        value={d?.rsi_14?.toFixed(0)}
-        subValue={d?.rsi_14 > 70 ? "Overbought" : d?.rsi_14 < 30 ? "Oversold" : "Neutral"}
+        label="RSI (14)"
+        value={d.rsi_14 != null ? d.rsi_14.toFixed(0) : "--"}
+        subValue={
+          d.rsi_14 != null
+            ? d.rsi_14 > 70
+              ? "Overbought"
+              : d.rsi_14 < 30
+              ? "Oversold"
+              : "Neutral"
+            : null
+        }
       />
-      <div className={`p-6 rounded-2xl border shadow-sm ${getSignalColor(a?.signal)}`}>
-        <div className="text-sm font-semibold opacity-75 mb-1">AI Signal</div>
-        <div className="text-3xl font-bold">{a?.signal}</div>
+      <div className={`metric-ai-signal ${getSignalColor(a.signal)}`}>
+        <div className="metric-ai-label">AI signal</div>
+        <div className="metric-ai-value">{a.signal || "--"}</div>
+        {a.time_horizon && (
+          <div className="metric-ai-horizon">Horizon: {a.time_horizon}</div>
+        )}
       </div>
       <MetricCard
-        label="Pattern Confidence"
-        value={`${a?.confidence?.toFixed(0)}%`}
-        subValue="Similarity"
-        subColor="text-indigo-600"
+        label="Pattern confidence"
+        value={a.confidence != null ? `${a.confidence.toFixed(0)}%` : "--"}
+        subValue="Similarity score"
+        subColor="metric-subvalue-emphasis"
       />
     </div>
   );
 }
 
-function MainCharts({ data }) {
+function MetricCard({ label, value, subValue, subColor }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 bg-white p-6 rounded-2xl border shadow-sm">
-        <h3 className="text-lg font-bold mb-4">Price Action</h3>
-        <div className="h-[400px] border rounded-lg">
+    <div className="metric-card">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{value || "--"}</div>
+      {subValue && (
+        <div className={`metric-subvalue ${subColor || ""}`}>{subValue}</div>
+      )}
+    </div>
+  );
+}
+
+function MainCharts({ data }) {
+  const [history, setHistory] = React.useState([]);
+
+React.useEffect(() => {
+  async function loadHistory() {
+    try {
+      console.log("hi",data.symbol)
+      const res = await fetch(
+        `http://localhost:5500/history?symbol=${data.symbol}&period=${period}&interval=${lookback}`
+      );
+      const json = await res.json();
+      console.log("hi",json)
+
+      if (json?.data) {
+        setHistory(json.data);
+      }
+    } catch (e) {
+      console.error("History fetch failed", e);
+    }
+  }
+
+  loadHistory();
+}, [data]);
+// const dates = history.map((d) => d.date);
+// const prices = history.map((d) => d.close);
+history.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  return (
+    <div className="charts-grid">
+      <div className="chart-main">
+        <h3 className="chart-title">Price action</h3>
+        <div className="chart-plot-wrapper">
+
           <Plot
-            data={{
-              x: data.chart?.dates,
-              y: data.chart?.prices,
-              type: "scatter",
-              mode: "lines",
-              line: { color: "#4F46E5" },
-              fill: "tozeroy",
-              fillcolor: "rgba(79,70,229,0.05)",
-            }}
-            layout={{ autosize: true, margin: { l: 40, r: 20, t: 20, b: 40 } }}
-            useResizeHandler
-            style={{ width: "100%", height: "100%" }}
-            config={{ displayModeBar: false }}
-          />
+  data={[
+    {
+      x: history.map((d) => d.date),
+      open: history.map((d) => d.open),
+      high: history.map((d) => d.high),
+      low: history.map((d) => d.low),
+      close: history.map((d) => d.close),
+      increasing: { line: { color: "#10B981" } }, // green
+  decreasing: { line: { color: "#EF4444" } }, // red
+      type: "candlestick",
+    },
+  ]}
+  layout={{
+    autosize: true,
+    margin: { l: 40, r: 20, t: 20, b: 40 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    xaxis: {
+      tickfont: { color: "#6B7280" },
+      gridcolor: "#E5E7EB",
+      type: "date",
+    },
+    yaxis: {
+      tickfont: { color: "#6B7280" },
+      gridcolor: "#E5E7EB",
+    },
+  }}
+  useResizeHandler
+  style={{ width: "100%", height: "100%" }}
+  config={{ displayModeBar: false, responsive: true }}
+/>
         </div>
       </div>
 
-      <div className="bg-indigo-50/50 p-6 rounded-2xl border">
-        <h3 className="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2">
-          <Sparkles className="w-5 h-5" /> Analysis
-        </h3>
-        <p className="text-slate-800 mb-6">{data.analysis?.reason}</p>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Info label="Volatility" value={`${data.indicators?.volatility?.toFixed(2)}%`} />
-          <Info label="Volume Ratio" value={`${data.indicators?.volume_ratio?.toFixed(2)}x`} />
+      <div className="chart-ai-summary">
+        <div>
+          <h3 className="chart-ai-title">
+            <Sparkles className="icon-sm" /> AI summary
+          </h3>
+          <p className="chart-ai-text">
+            {data.analysis?.reason || "No explanation generated."}
+          </p>
+        </div>
+        <div className="chart-ai-info-grid">
+          <Info
+            label="Volatility"
+            value={
+              data.indicators?.volatility != null
+                ? `${data.indicators.volatility.toFixed(2)}%`
+                : "--"
+            }
+          />
+          <Info
+            label="Volume ratio"
+            value={
+              data.indicators?.volume_ratio != null
+                ? `${data.indicators.volume_ratio.toFixed(2)}x`
+                : "--"
+            }
+          />
         </div>
       </div>
     </div>
@@ -360,67 +585,83 @@ function MainCharts({ data }) {
 
 function Info({ label, value }) {
   return (
-    <div>
-      <div className="text-xs font-bold text-indigo-400 uppercase mb-1">{label}</div>
-      <div className="text-lg font-bold text-slate-800">{value}</div>
+    <div className="info-block">
+      <div className="info-label">{label}</div>
+      <div className="info-value">{value}</div>
     </div>
   );
 }
 
-function MetricCard({ label, value, subValue, subColor }) {
-  return (
-    <div className="bg-white p-6 rounded-2xl border shadow-sm">
-      <div className="text-sm font-semibold text-slate-500 mb-1">{label}</div>
-      <div className="text-2xl font-bold">{value || "--"}</div>
-      {subValue && <div className={`text-sm mt-2 font-semibold ${subColor}`}>{subValue}</div>}
-    </div>
-  );
-}
-
-// -------------------------------
-// PATTERNS
-// -------------------------------
+// ==============================
+// PATTERNS TAB
+// ==============================
 function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
+  if (!data.matches || data.matches.length === 0) {
+    return (
+      <p className="text-muted">
+        No pattern matches found for this configuration.
+      </p>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      {data.matches?.map((m, idx) => (
-        <div key={idx} className="bg-white border rounded-2xl shadow-sm">
-          <div
-            className="p-5 flex items-center justify-between cursor-pointer bg-slate-50"
+    <div className="patterns-list">
+      {data.matches.map((m, idx) => (
+        <div key={idx} className="pattern-card">
+          <button
+            type="button"
+            className="pattern-header"
             onClick={() => setExpandedMatch(expandedMatch === idx ? null : idx)}
           >
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-lg">
-                #{m.rank}
+            <div className="pattern-header-left">
+              <div className="pattern-rank">
+                #{m.rank ?? idx + 1}
               </div>
-              <div>
-                <div className="font-bold">
+              <div className="pattern-header-text">
+                <div className="pattern-dates">
                   {m.start_date} → {m.end_date}
                 </div>
-                <div className="text-sm text-slate-500">Correlation</div>
+                <div className="pattern-subtitle">
+                  Historical regime • Similarity match
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <span className="text-xl font-bold text-emerald-600">{m.score?.toFixed(1)}%</span>
-              {expandedMatch === idx ? <ChevronUp /> : <ChevronDown />}
+            <div className="pattern-header-right">
+              {m.score != null && (
+                <span className="pattern-score">
+                  {m.score.toFixed(1)}%
+                </span>
+              )}
+              {expandedMatch === idx ? (
+                <ChevronUp className="icon-xs icon-muted" />
+              ) : (
+                <ChevronDown className="icon-xs icon-muted" />
+              )}
             </div>
-          </div>
+          </button>
 
           {expandedMatch === idx && (
-            <div className="p-6 border-t bg-white">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="pattern-body">
+              <div className="pattern-body-grid">
                 <div>
-                  <h4 className="font-bold text-sm uppercase mb-3">Historical Returns</h4>
-                  <div className="flex gap-2">
+                  <h4 className="pattern-section-title">
+                    Future returns after this pattern
+                  </h4>
+                  <div className="pattern-future-returns">
                     {m.future_returns &&
                       Object.entries(m.future_returns).map(([k, v]) => (
                         <div
                           key={k}
-                          className={`flex-1 p-3 rounded-xl border text-center ${v >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100"}`}
+                          className={`future-return-box ${
+                            v >= 0 ? "future-return-positive" : "future-return-negative"
+                          }`}
                         >
-                          <div className="text-xs font-bold text-slate-500 uppercase">{k}</div>
-                          <div className={`font-bold ${v >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-                            {v >= 0 ? "+" : ""}{v.toFixed(2)}%
+                          <div className="future-return-label">
+                            {k}
+                          </div>
+                          <div className="future-return-value">
+                            {v >= 0 ? "+" : ""}
+                            {v.toFixed(2)}%
                           </div>
                         </div>
                       ))}
@@ -428,8 +669,8 @@ function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
                 </div>
 
                 {m.ai_insight && (
-                  <div className="bg-slate-50 p-4 rounded-xl border text-sm leading-relaxed">
-                    <span className="font-bold text-indigo-600 block mb-1">AI Insight:</span>
+                  <div className="pattern-ai-insight">
+                    <span className="pattern-ai-label">AI insight</span>
                     {m.ai_insight}
                   </div>
                 )}
@@ -442,76 +683,108 @@ function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
   );
 }
 
-// -------------------------------
-// PREDICTIONS
-// -------------------------------
+// ==============================
+// PREDICTIONS TAB
+// ==============================
 function PredictionsTab({ data }) {
+  if (!data.predictions) {
+    return (
+      <p className="text-muted">
+        No prediction scenarios available for this configuration.
+      </p>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {data.predictions &&
-        Object.entries(data.predictions).map(([k, v]) => (
-          <div key={k} className="bg-white p-6 rounded-2xl border shadow-sm text-center">
-            <div className="text-xs font-bold text-slate-400 uppercase mb-2">{k}</div>
-            <div className={`text-3xl font-bold mb-2 ${v.mean >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-              {v.mean >= 0 ? "+" : ""}{v.mean.toFixed(2)}%
-            </div>
-            <div className="text-xs text-slate-500">
-              Range: {v.min.toFixed(1)}% - {v.max.toFixed(1)}%
-            </div>
+    <div className="predictions-grid">
+      {Object.entries(data.predictions).map(([k, v]) => (
+        <div key={k} className="prediction-card">
+          <div className="prediction-label">{k}</div>
+          <div
+            className={`prediction-value ${
+              v.mean >= 0 ? "prediction-positive" : "prediction-negative"
+            }`}
+          >
+            {v.mean >= 0 ? "+" : ""}
+            {v.mean.toFixed(2)}%
           </div>
-        ))}
+          <div className="prediction-range">
+            Range: {v.min.toFixed(1)}% – {v.max.toFixed(1)}%
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-// -------------------------------
-// AI REPORT
-// -------------------------------
+// ==============================
+// AI REPORT TAB
+// ==============================
 function AiReportTab({ data }) {
+  const metadata = data.metadata || {};
+
   return (
-    <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-      <div className="bg-gradient-to-r from-violet-600 to-indigo-600 p-8 text-white">
-        <h2 className="text-2xl font-bold flex items-center gap-3">
-          <BrainCircuit className="w-8 h-8 opacity-80" /> AI Analysis Report
+    <div className="ai-report">
+      <div className="ai-report-hero">
+        <h2 className="ai-report-title">
+          <BrainCircuit className="icon-lg icon-inverse" /> AI analysis report
         </h2>
-        <p className="text-indigo-100 mt-2">Full breakdown from GPT.</p>
+        <p className="ai-report-subtitle">
+          Narrative-style explanation of pattern matches, risk, and likely outcomes.
+        </p>
       </div>
 
-      <div className="p-8">
+      <div className="ai-report-body">
         {!data.ai_error ? (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              h1: (p) => <h1 className="text-2xl font-bold mt-6 mb-4" {...p} />,
-              p: (p) => <p className="mb-4 text-slate-700 leading-relaxed" {...p} />,
+              h1: (p) => <h1 className="ai-markdown-h1" {...p} />,
+              h2: (p) => <h2 className="ai-markdown-h2" {...p} />,
+              p: (p) => <p className="ai-markdown-p" {...p} />,
+              li: (p) => <li className="ai-markdown-li" {...p} />,
             }}
           >
             {data.ai_report || "No report generated."}
           </ReactMarkdown>
         ) : (
-          <div className="bg-rose-50 border border-rose-200 rounded-xl p-6 text-rose-800 flex gap-4">
-            <AlertCircle className="w-6 h-6" />
+          <div className="ai-error-banner">
+            <AlertCircle className="icon-sm" />
             <div>
-              <h3 className="font-bold text-lg mb-1">Analysis Unavailable</h3>
-              <p>{data.ai_error}</p>
+              <h3 className="ai-error-title">Analysis unavailable</h3>
+              <p className="ai-error-text">{data.ai_error}</p>
             </div>
           </div>
         )}
 
-        {data.metadata && (
-          <div className="mt-8 pt-8 border-t flex gap-8 text-sm text-slate-500">
-            <div className="flex items-center gap-2">
-              {data.metadata.ai_configured ? (
-                <CheckCircle className="w-4 h-4 text-emerald-500" />
+        {metadata && (
+          <div className="ai-report-footer">
+            <div className="ai-status">
+              {metadata.ai_configured ? (
+                <CheckCircle className="icon-xs icon-positive" />
               ) : (
-                <XCircle className="w-4 h-4 text-rose-500" />
+                <XCircle className="icon-xs icon-negative" />
               )}
-              AI Status: {data.metadata.ai_configured ? "Online" : "Offline"}
+              <span>
+                AI status:{" "}
+                {metadata.ai_configured
+                  ? "Online and configured"
+                  : "Offline / not configured"}
+              </span>
             </div>
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Generated: {new Date(data.metadata.generated_at).toLocaleTimeString()}
-            </div>
+            {metadata.generated_at && (
+              <div className="ai-generated-at">
+                <Clock className="icon-xs" />
+                <span>
+                  Generated:{" "}
+                  {new Date(metadata.generated_at).toLocaleString(undefined, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                  })}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
