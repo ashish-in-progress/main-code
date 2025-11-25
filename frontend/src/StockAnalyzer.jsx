@@ -491,7 +491,7 @@ React.useEffect(() => {
     try {
       console.log("hi",data.symbol)
       const res = await fetch(
-        `http://localhost:5500/history?symbol=${data.symbol}&period=${period}&interval=${lookback}`
+        `http://localhost:5500/history?symbol=${data.symbol}&period=${data.period}&interval=1d`
       );
       const json = await res.json();
       console.log("hi",json)
