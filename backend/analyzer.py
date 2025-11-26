@@ -2,7 +2,24 @@
 Flask API for Stock Pattern Analysis with AI Insights
 Endpoint: http://localhost:8000/analyze?symbol=TCS.NS&period=6mo&lookback=5&top_n=5
 """
-
+import ta
+import yfinance as yf
+import requests
+import time
+import os
+import pandas_ta as ta
+from flask import Flask, jsonify,request
+import os
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import mysql.connector
+from bs4 import BeautifulSoup
+import pytz
+from flask_cors import CORS
+import mysql.connector
+import json
+import traceback
+from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -1243,7 +1260,398 @@ def analyze_stock():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+db_config = {
+    'host': '192.168.3.204',
+    'user': 'cs_dev',
+    'password': '1432',
+    'database': 'my_stocks'
+}
+@app.route('/portfolio', methods=['POST'])
+def portfolio():
+    """Get portfolio data for a user from MySQL database"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user') if data else None
+        
+        if not user_id:
+            return jsonify({"error": "user parameter missing"}), 400
 
+        with mysql.connector.connect(**db_config) as conn:
+            with conn.cursor(dictionary=True, buffered=True) as cursor:
+                cursor.execute("SELECT data FROM json_files WHERE id = %s", (user_id,))
+                row = cursor.fetchone()
+
+        if not row:
+            return jsonify({"error": "No portfolio found"}), 404
+
+        portfolio_data = json.loads(row['data'])
+        return jsonify(portfolio_data)
+
+    except Exception as e:
+        print("ERROR in /portfolio route:\n", traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/current", methods=["GET"])
+def current_price():
+    """Get current price for a stock symbol"""
+    symbol = request.args.get("symbol")
+    
+    if not symbol:
+        return jsonify({"error": "symbol is required"}), 400
+
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+        
+        if not current_price:
+            # Fallback: get latest close price
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                current_price = float(hist['Close'].iloc[-1])
+        
+        return jsonify({
+            "symbol": symbol,
+            "current_price": float(current_price) if current_price else None
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/history", methods=["GET"])
+def history():
+    """Get historical candlestick data (OHLCV) for a stock symbol
+    
+    Parameters:
+    - symbol: Stock symbol (required)
+    - period: Time period (1d, 3d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
+    - interval: Data interval (1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo)
+    
+    Note: Intraday intervals (1m, 5m, etc.) only work with shorter periods (max 60 days)
+    """
+    symbol = request.args.get("symbol")
+    period = request.args.get("period", "1y")
+    interval = request.args.get("interval", "1d")
+    
+    if not symbol:
+        return jsonify({"error": "symbol is required"}), 400
+    
+    try:
+        ticker = yf.Ticker(symbol)
+        
+        # Define IST timezone
+        ist = pytz.timezone('Asia/Kolkata')
+        
+        # Validate interval and period combination
+        intraday_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h']
+        original_period = period
+        
+        if interval in intraday_intervals:
+            valid_intraday_periods = ['1d', '5d', '1mo']
+            if period not in valid_intraday_periods:
+                period = '5d'  # Default to 5 days for intraday
+                print(f"Warning: Adjusted period from {original_period} to {period} for intraday interval {interval}")
+        
+        # Fetch data
+        df = ticker.history(period=period, interval=interval)
+        
+        if df.empty:
+            return jsonify({
+                "error": f"No data available for {symbol} with interval={interval} and period={period}",
+                "symbol": symbol,
+                "period": period,
+                "interval": interval,
+                "data_points": 0,
+                "data": []
+            }), 404
+        
+        # Get OHLCV data
+        df = df[["Open", "High", "Low", "Close", "Volume"]].reset_index()
+        
+        # Process data based on whether it's intraday or daily+
+        candlestick_data = []
+        
+        for _, row in df.iterrows():
+            try:
+                # Check if index is Datetime (intraday) or Date (daily+)
+                if "Datetime" in row:
+                    dt = row["Datetime"]
+                    # Ensure timezone awareness
+                    if dt.tzinfo is None:
+                        dt = pytz.utc.localize(dt)
+                    dt_ist = dt.astimezone(ist)
+                    date_str = dt_ist.strftime("%Y-%m-%d %H:%M:%S")
+                    timestamp = int(dt_ist.timestamp() * 1000)
+                else:
+                    dt = row["Date"]
+                    date_str = dt.strftime("%Y-%m-%d")
+                    timestamp = int(dt.timestamp() * 1000)
+                
+                candlestick_data.append({
+                    "date": date_str,
+                    "timestamp": timestamp,
+                    "open": round(float(row["Open"]), 2),
+                    "high": round(float(row["High"]), 2),
+                    "low": round(float(row["Low"]), 2),
+                    "close": round(float(row["Close"]), 2),
+                    "volume": int(row["Volume"])
+                })
+            except Exception as row_error:
+                print(f"Error processing row: {row_error}")
+                continue
+        
+        return jsonify({
+            "symbol": symbol,
+            "period": period,
+            "interval": interval,
+            "original_period": original_period if period != original_period else None,
+            "data_points": len(candlestick_data),
+            "data": candlestick_data
+        })
+    
+    except Exception as e:
+        print("ERROR in /history route:\n", traceback.format_exc())
+        return jsonify({
+            "error": str(e),
+            "symbol": symbol,
+            "period": period,
+            "interval": interval
+        }), 500
+
+# @app.route("/", methods=["GET"])
+# def home():
+#     """Home endpoint"""
+#     return jsonify({
+#         "message": "Portfolio API",
+#         "endpoints": {
+#             "/portfolio": "POST - Get portfolio data",
+#             "/current": "GET - Get current stock price",
+#             "/history": "GET - Get historical candlestick data (OHLCV)"
+#         }
+#     })
+import yfinance as yf
+import pandas as pd
+
+def compute_indicators(hist):
+    """Compute technical indicators (RSI, MACD, SMA, EMA)."""
+    indicators = {}
+
+    if hist.empty:
+        return indicators
+
+    close = hist["Close"]
+
+    # --- RSI (14) ---
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    indicators["rsi_14"] = round(rsi.iloc[-1], 2)
+
+    # --- MACD (12,26,9) ---
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    hist_macd = macd - signal
+
+    indicators["macd"] = round(macd.iloc[-1], 4)
+    indicators["macd_signal"] = round(signal.iloc[-1], 4)
+    indicators["macd_hist"] = round(hist_macd.iloc[-1], 4)
+
+    # --- SMA ---
+    indicators["sma20"] = round(close.rolling(20).mean().iloc[-1], 2)
+    indicators["sma50"] = round(close.rolling(50).mean().iloc[-1], 2)
+    indicators["sma200"] = round(close.rolling(200).mean().iloc[-1], 2)
+
+    # --- EMA ---
+    indicators["ema12"] = round(ema12.iloc[-1], 2)
+    indicators["ema26"] = round(ema26.iloc[-1], 2)
+
+    return indicators
+
+def get_all_stock_data(symbol):
+    """Fetch ALL available data from yfinance"""
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        hist = ticker.history(period="1y")
+        technical_indicators = compute_indicators(hist)
+
+        # Calculate price changes
+        price_changes = {}
+        if not hist.empty and len(hist) >= 5:
+            latest = hist["Close"].iloc[-1]
+            if len(hist) >= 2:
+                prev_day = hist["Close"].iloc[-2]
+                price_changes["change_1d"] = round((latest - prev_day) / prev_day * 100, 2)
+            if len(hist) >= 5:
+                week_ago = hist["Close"].iloc[-5]
+                price_changes["change_1w"] = round((latest - week_ago) / week_ago * 100, 2)
+            if len(hist) >= 1:
+                year_ago = hist["Close"].iloc[0]
+                price_changes["change_1y"] = round((latest - year_ago) / year_ago * 100, 2)
+        
+        # Extract all relevant data from info
+        stock_data = {
+            "symbol": symbol,
+            "name": info.get("longName") or info.get("shortName") or symbol.replace(".NS", ""),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "country": info.get("country"),
+            "website": info.get("website"),
+            "business_summary": info.get("longBusinessSummary"),
+            
+            # Market Data
+            "market_cap": info.get("marketCap"),
+            "enterprise_value": info.get("enterpriseValue"),
+            "previous_close": info.get("previousClose"),
+            "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+            "open": info.get("open"),
+            "day_high": info.get("dayHigh"),
+            "day_low": info.get("dayLow"),
+            "volume": info.get("volume"),
+            "avg_volume": info.get("averageVolume"),
+            "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+            "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+            
+            # Valuation Metrics
+            "pe_ratio": info.get("trailingPE"),
+            "forward_pe": info.get("forwardPE"),
+            "peg_ratio": info.get("pegRatio"),
+            "price_to_book": info.get("priceToBook"),
+            "price_to_sales": info.get("priceToSalesTrailing12Months"),
+            "enterprise_to_revenue": info.get("enterpriseToRevenue"),
+            "enterprise_to_ebitda": info.get("enterpriseToEbitda"),
+            
+            # Profitability
+            "profit_margins": info.get("profitMargins"),
+            "operating_margins": info.get("operatingMargins"),
+            "gross_margins": info.get("grossMargins"),
+            "ebitda_margins": info.get("ebitdaMargins"),
+            
+            # Financial Metrics
+            "revenue": info.get("totalRevenue"),
+            "revenue_per_share": info.get("revenuePerShare"),
+            "revenue_growth": info.get("revenueGrowth"),
+            "gross_profits": info.get("grossProfits"),
+            "ebitda": info.get("ebitda"),
+            "net_income": info.get("netIncomeToCommon"),
+            "earnings_growth": info.get("earningsGrowth"),
+            "eps": info.get("trailingEps"),
+            "forward_eps": info.get("forwardEps"),
+            
+            # Returns
+            "roe": info.get("returnOnEquity"),
+            "roa": info.get("returnOnAssets"),
+            
+            # Dividends
+            "dividend_rate": info.get("dividendRate"),
+            "dividend_yield": info.get("dividendYield"),
+            "payout_ratio": info.get("payoutRatio"),
+            "five_year_avg_dividend_yield": info.get("fiveYearAvgDividendYield"),
+            
+            # Balance Sheet
+            "total_cash": info.get("totalCash"),
+            "total_debt": info.get("totalDebt"),
+            "total_assets": info.get("totalAssets"),
+            "current_ratio": info.get("currentRatio"),
+            "quick_ratio": info.get("quickRatio"),
+            "debt_to_equity": info.get("debtToEquity"),
+            "book_value": info.get("bookValue"),
+            
+            # Cash Flow
+            "operating_cashflow": info.get("operatingCashflow"),
+            "free_cashflow": info.get("freeCashflow"),
+            
+            # Share Info
+            "shares_outstanding": info.get("sharesOutstanding"),
+            "float_shares": info.get("floatShares"),
+            "shares_short": info.get("sharesShort"),
+            "short_ratio": info.get("shortRatio"),
+            "short_percent_float": info.get("shortPercentOfFloat"),
+            "held_percent_insiders": info.get("heldPercentInsiders"),
+            "held_percent_institutions": info.get("heldPercentInstitutions"),
+            
+            # Trading Info
+            "beta": info.get("beta"),
+            "fifty_day_average": info.get("fiftyDayAverage"),
+            "two_hundred_day_average": info.get("twoHundredDayAverage"),
+            
+            # Analyst Recommendations
+            "recommendation": info.get("recommendationKey"),
+            "target_high_price": info.get("targetHighPrice"),
+            "target_low_price": info.get("targetLowPrice"),
+            "target_mean_price": info.get("targetMeanPrice"),
+            "target_median_price": info.get("targetMedianPrice"),
+            "number_of_analyst_opinions": info.get("numberOfAnalystOpinions"),
+        }
+        
+        # Add price changes
+        stock_data.update(price_changes)
+        stock_data.update(technical_indicators)
+        return stock_data
+        
+    except Exception as e:
+        print(f"Error fetching data for {symbol}: {e}")
+        return None
+
+@app.route('/', methods=['GET'])
+def get_stock():
+    """
+    Fetch stock data by symbol
+    Usage: /?stock=RELIANCE.NS
+           /?stock=RELIANCE.NS&refresh=true
+           /?stock=RELIANCE.NS&fresh=true
+    """
+    stock_symbol = request.args.get('stock')
+    refresh = request.args.get('refresh', 'false').lower() == 'true'
+    fresh = request.args.get('fresh', 'false').lower() == 'true'
+    
+    if not stock_symbol:
+        return jsonify({
+            "status": "error",
+            "message": "Stock symbol not provided. Usage: /?stock=RELIANCE.NS"
+        }), 400
+    
+    # Normalize symbol (add .NS if not present)
+    if not stock_symbol.endswith('.NS'):
+        stock_symbol = f"{stock_symbol}.NS"
+    
+    # If refresh or fresh is requested, fetch from yfinance and update DB
+    if refresh or fresh:
+        print(f"🔄 Refreshing data for {stock_symbol}...")
+        stock_data = get_all_stock_data(stock_symbol)
+        
+        if not stock_data:
+            return jsonify({
+                "status": "error",
+                "message": f"Could not fetch data for {stock_symbol} from yfinance"
+            }), 404
+        
+    
+    # If not in DB, fetch from yfinance
+    print(f"📥 Fetching {stock_symbol} from yfinance...")
+    stock_data = get_all_stock_data(stock_symbol)
+    
+    if not stock_data:
+        return jsonify({
+            "status": "error",
+            "message": f"Stock {stock_symbol} not found"
+        }), 404
+    
+    
+    stock_data['last_updated'] = datetime.now().isoformat()
+    stock_data['source'] = 'yfinance'
+    
+    return jsonify({
+        "status": "success",
+        "data": stock_data
+    }), 200
 if __name__ == '__main__':
-    port = 8000
+    port = 5500
     app.run(host='0.0.0.0', port=port)

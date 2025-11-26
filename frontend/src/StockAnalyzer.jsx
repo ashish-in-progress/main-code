@@ -24,7 +24,7 @@ import {
 
 import "./analyzer.css";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = "http://localhost:5500";
 
 // ==============================
 // ROOT DASHBOARD
