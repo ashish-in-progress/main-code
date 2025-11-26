@@ -79,65 +79,269 @@ export class KiteService {
 
     throw new Error('No content in login response');
   }
+static async parseJsonFromText(text) {
+  /**
+   * Try multiple heuristics to extract valid JSON from a noisy text string:
+   * 1. Try direct JSON.parse(text).
+   * 2. Strip common markdown code fences and try again.
+   * 3. Find first '{' or '[' and then locate matching closing brace/bracket using a balance counter.
+   * 4. If nothing works, throw an informative error.
+   */
+  if (!text || typeof text !== 'string') {
+    throw new Error('No text to parse as JSON');
+  }
+
+  const tryParse = (s) => {
+    try {
+      return JSON.parse(s);
+    } catch (err) {
+      return null;
+    }
+  };
+
+  // 1) direct
+  let parsed = tryParse(text);
+  if (parsed !== null) return parsed;
+
+  // 2) Remove triple/backtick fences and leading language labels like ```json
+  const stripped = text.replace(/```[\s\S]*?```/g, (m) => {
+    // if inside the fence is valid JSON try to return it; otherwise remove the fence
+    const inner = m.replace(/^```[\w]*\n?/, '').replace(/```$/, '');
+    const p = tryParse(inner);
+    if (p !== null) return inner;
+    return '';
+  }).trim();
+
+  parsed = tryParse(stripped);
+  if (parsed !== null) return parsed;
+
+  // 3) Locate first JSON-starting char and find the matching end by counting nest level
+  const firstObj = Math.min(
+    ...['{', '[']
+      .map(ch => {
+        const idx = stripped.indexOf(ch);
+        return idx === -1 ? Infinity : idx;
+      })
+  );
+
+  const rawToScan = firstObj === Infinity ? text : stripped;
+  const startIdx = Math.min(
+    ...['{', '[']
+      .map(ch => {
+        const idx = rawToScan.indexOf(ch);
+        return idx === -1 ? Infinity : idx;
+      })
+  );
+
+  if (startIdx === Infinity) {
+    throw new Error('No JSON object/array start found in text');
+  }
+
+  const openChar = rawToScan[startIdx];
+  const closeChar = openChar === '{' ? '}' : ']';
+
+  // Find matching close using a stack counter
+  let depth = 0;
+  let endIdx = -1;
+  for (let i = startIdx; i < rawToScan.length; i++) {
+    const c = rawToScan[i];
+    if (c === openChar) depth++;
+    else if (c === closeChar) depth--;
+
+    if (depth === 0) {
+      endIdx = i;
+      break;
+    }
+  }
+
+  if (endIdx === -1) {
+    // fallback: try finding last closeChar in the full text
+    const lastClose = rawToScan.lastIndexOf(closeChar);
+    if (lastClose > startIdx) endIdx = lastClose;
+  }
+
+  if (endIdx === -1) {
+    throw new Error('Unable to locate end of JSON in text');
+  }
+
+  const candidate = rawToScan.slice(startIdx, endIdx + 1);
+  parsed = tryParse(candidate);
+  if (parsed !== null) return parsed;
+
+  // If we still can't parse, as a last resort, try repeatedly extracting {...} substrings and parse any that succeed
+  const objMatches = rawToScan.match(/\{[\s\S]*?\}/g) || [];
+  for (const m of objMatches) {
+    const p = tryParse(m);
+    if (p !== null) return p;
+  }
+
+  throw new Error('Failed to parse JSON from text (after multiple heuristics)');
+}
+
+static normalizeHoldingEntry(raw) {
+  // Normalize a single holding/position object shape to our DB schema
+  const n = raw || {};
+  const quantity = Number(n.quantity ?? n.net_quantity ?? n.used_quantity ?? 0) || 0;
+  const average_price = Number(n.average_price ?? n.avg_price ?? n.avg ?? 0) || 0;
+  const last_price = Number(n.last_price ?? n.last_trade_price ?? n.last_price) || 0;
+  const pnl = Number(n.pnl ?? n.profit_loss ?? n.m2m ?? 0) || 0;
+
+  const pnl_percentage = (average_price > 0 && quantity !== 0)
+    ? (pnl / (average_price * Math.abs(quantity))) * 100
+    : 0;
+
+  return {
+    tradingsymbol: n.tradingsymbol || n.symbol || '',
+    exchange: n.exchange || 'NSE',
+    quantity,
+    average_price,
+    last_price,
+    ltp: last_price,
+    pnl,
+    pnl_percentage,
+    product: n.product || 'CNC',
+    isin: n.isin || '',
+    raw: n
+  };
+}
+
 static async fetchAndSaveHoldings(sessionId, userEmail) {
+  logger.info('🔁 fetchAndSaveHoldings started for', userEmail, 'session:', sessionId);
+
   if (!kiteAgents.has(sessionId)) {
     throw new Error('Kite agent not initialized');
   }
+  if (!kiteClients.has(sessionId)) {
+    throw new Error('Kite client not available/connected');
+  }
 
   const client = kiteClients.get(sessionId);
-  
-  // Call holdings tool
-  const holdingsResult = await client.callTool("get_holdings", {});
-  const holdingsText = client.extractTextFromResult(holdingsResult);
-  
-  // Parse holdings
-  let holdingsData;
+
+  // 1) call tool
+  let holdingsResult;
   try {
-    holdingsData = JSON.parse(holdingsText);
-  } catch (error) {
-    logger.error('Failed to parse Kite holdings:', error.message);
-    throw new Error('Failed to parse holdings data');
+    holdingsResult = await client.callTool("get_holdings", {});
+  } catch (err) {
+    logger.error('Error calling get_holdings tool:', err.message);
+    throw new Error('Failed to call get_holdings tool: ' + err.message);
   }
 
-  // Save to database
+  // 2) extract textual body safely using client's helper if available, else fallback
+  let holdingsText = '';
+  try {
+    if (typeof client.extractTextFromResult === 'function') {
+      holdingsText = client.extractTextFromResult(holdingsResult);
+    } else if (holdingsResult && holdingsResult.content && holdingsResult.content.length > 0) {
+      holdingsText = holdingsResult.content.map(c => c.text || '').join('\n');
+    } else if (typeof holdingsResult === 'string') {
+      holdingsText = holdingsResult;
+    } else {
+      holdingsText = JSON.stringify(holdingsResult);
+    }
+  } catch (err) {
+    logger.warn('Could not use client.extractTextFromResult(), falling back. Error:', err.message);
+    holdingsText = JSON.stringify(holdingsResult);
+  }
+
+  if (!holdingsText || holdingsText.trim().length === 0) {
+    throw new Error('No content returned from get_holdings tool');
+  }
+
+  // 3) parse JSON using robust helper
+  let parsed;
+  try {
+    parsed = await this.parseJsonFromText(holdingsText);
+  } catch (err) {
+    logger.error('Failed to parse holdings text into JSON:', err.message);
+    logger.debug('holdingsText (first 1000 chars):', holdingsText.slice(0, 1000));
+    throw new Error('Failed to parse holdings JSON: ' + err.message);
+  }
+
+  // 4) normalize list extraction: accept array, or object wrappers
+  let holdingsArray = [];
+  if (Array.isArray(parsed)) {
+    holdingsArray = parsed;
+  } else if (Array.isArray(parsed.data)) {
+    holdingsArray = parsed.data;
+  } else if (Array.isArray(parsed.holdings)) {
+    holdingsArray = parsed.holdings;
+  } else if (parsed.net && Array.isArray(parsed.net)) {
+    holdingsArray = parsed.net;
+  } else {
+    // If parsed is an object but not an array, try best-effort to collect object values that are arrays
+    const arrCandidates = Object.values(parsed).filter(v => Array.isArray(v));
+    if (arrCandidates.length > 0) {
+      holdingsArray = arrCandidates[0];
+      logger.warn('Found array inside parsed object and using that as holdings');
+    } else {
+      // last resort: if parsed looks like a single holding object, wrap into array
+      if (typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        holdingsArray = [parsed];
+        logger.warn('Parsed single object and wrapping into array for processing');
+      } else {
+        logger.warn('Unexpected holdings format after parsing:', parsed);
+        holdingsArray = [];
+      }
+    }
+  }
+
+  // 5) Transform / normalize entries
+  const normalized = holdingsArray.map(h => this.normalizeHoldingEntry(h));
+
+  // Filter out zero-quantity holdings (optional; you may change this behavior)
+  const toSave = normalized.filter(h => h.quantity !== 0);
+
+  // 6) Save to DB: clear old and insert new
   const db = (await import('../../config/db.js')).db;
-  
-  await db.query(
-    'DELETE FROM User_Holdings WHERE user_email = ? AND broker = ?',
-    [userEmail, 'kite']
-  );
 
-  const holdings = holdingsData.data || holdingsData.holdings || [];
-  for (const holding of holdings) {
-    await db.query(
-      `INSERT INTO User_Holdings 
-       (user_email, broker, symbol, quantity, average_price, current_price, 
-        ltp, pnl, pnl_percentage, product, exchange, isin, raw_data) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        userEmail,
-        'kite',
-        holding.tradingsymbol || holding.symbol,
-        holding.quantity || 0,
-        holding.average_price || 0,
-        holding.last_price || 0,
-        holding.last_price || 0,
-        holding.pnl || 0,
-        ((holding.pnl / (holding.average_price * holding.quantity)) * 100) || 0,
-        holding.product || 'CNC',
-        holding.exchange || 'NSE',
-        holding.isin || '',
-        JSON.stringify(holding)
-      ]
-    );
+  try {
+    await db.query('DELETE FROM User_Holdings WHERE user_email = ? AND broker = ?', [userEmail, 'kite']);
+  } catch (err) {
+    logger.error('Failed to delete old holdings for user:', err.message);
+    // proceed — but surface the error to logs
   }
 
-  logger.info(`Saved ${holdings.length} Kite holdings for ${userEmail}`);
-  
+  // Insert rows one-by-one (keeps things simple). If your db supports transactions, you can wrap in one.
+  let savedCount = 0;
+  const savedRows = [];
+  for (const h of toSave) {
+    try {
+      await db.query(
+        `INSERT INTO User_Holdings 
+         (user_email, broker, symbol, quantity, average_price, current_price, 
+          ltp, pnl, pnl_percentage, product, exchange, isin, raw_data) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          userEmail,
+          'kite',
+          h.tradingsymbol,
+          h.quantity,
+          h.average_price,
+          h.last_price,
+          h.ltp,
+          h.pnl,
+          h.pnl_percentage,
+          h.product,
+          h.exchange,
+          h.isin,
+          JSON.stringify(h.raw)
+        ]
+      );
+      savedCount++;
+      savedRows.push(h);
+    } catch (err) {
+      logger.warn(`Failed to insert holding ${h.tradingsymbol} for ${userEmail}: ${err.message}`);
+      // continue inserting the rest
+    }
+  }
+
+  logger.info(`Saved ${savedCount} Kite holdings for ${userEmail} (attempted ${toSave.length})`);
+
   return {
     success: true,
-    count: holdings.length,
-    holdings
+    count: savedCount,
+    attempted: toSave.length,
+    holdings: savedRows
   };
 }
 static async fetchAndSavePositions(sessionId, userEmail) {
