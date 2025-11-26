@@ -105,6 +105,73 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
     holdings
   };
 }
+static async fetchAndSavePositions(sessionId, userEmail) {
+  if (!fyersAgents.has(sessionId)) {
+    throw new Error('Fyers agent not initialized');
+  }
+
+  const mcpClient = fyersMcpClients.get(sessionId);
+  
+  // Call positions tool
+  const positionsResult = await mcpClient.callTool("get_positions", {});
+  const positionsText = mcpClient.extractTextFromResult(positionsResult);
+  
+  // Parse positions
+  let positionsData;
+  try {
+    positionsData = JSON.parse(positionsText);
+  } catch (error) {
+    logger.error('Failed to parse Fyers positions:', error.message);
+    throw new Error('Failed to parse positions data');
+  }
+
+  // Save to database
+  const db = (await import('../../config/db.js')).db;
+  
+  await db.query(
+    'DELETE FROM User_Holdings WHERE user_email = ? AND broker = ? AND holding_type = ?',
+    [userEmail, 'fyers', 'POSITION']
+  );
+
+  const positions = positionsData.netPositions || positionsData.positions || [];
+  
+  for (const position of positions) {
+    if (!position.netQty || position.netQty === 0) {
+      continue;
+    }
+
+    await db.query(
+      `INSERT INTO User_Holdings 
+       (user_email, broker, holding_type, symbol, quantity, average_price, current_price, 
+        ltp, pnl, pnl_percentage, product, exchange, isin, raw_data) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userEmail,
+        'fyers',
+        'POSITION',
+        position.symbol || position.tradingsymbol,
+        position.netQty || 0,
+        position.buyAvg || position.avgPrice || 0,
+        position.ltp || 0,
+        position.ltp || 0,
+        position.pl || position.realizedProfit || 0,
+        position.plPerc || 0,
+        position.productType || 'INTRADAY',
+        position.exchange || 'NSE',
+        '',
+        JSON.stringify(position)
+      ]
+    );
+  }
+
+  logger.info(`Saved ${positions.length} Fyers positions for ${userEmail}`);
+  
+  return {
+    success: true,
+    count: positions.length,
+    positions
+  };
+}
   static async verifyAuth(sessionId, userEmail) {  // ADD userEmail parameter
   if (!fyersMcpClients.has(sessionId)) {
     throw new Error('Not connected');
@@ -125,7 +192,11 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
     logger.warn('Failed to auto-fetch Fyers holdings:', error.message);
     // Don't fail auth if holdings fetch fails
   }
-
+try {
+    await this.fetchAndSavePositions(sessionId, userEmail);
+  } catch (error) {
+    logger.warn('Failed to auto-fetch Fyers positions:', error.message);
+  }
   return {
     success: true,
     authenticated: true,

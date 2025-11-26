@@ -71,7 +71,62 @@ export class UpstoxService {
     holdings
   };
 }
+static async fetchAndSavePositions(sessionId, userEmail, req) {
+  if (!upstoxClients.has(sessionId)) {
+    const client = new UpstoxClient(req.session.upstoxAccessToken);
+    upstoxClients.set(sessionId, client);
+  }
 
+  const client = upstoxClients.get(sessionId);
+  const positionsResult = await client.getPositions();
+  
+  // Save to database
+  const db = (await import('../../config/db.js')).db;
+  
+  await db.query(
+    'DELETE FROM User_Holdings WHERE user_email = ? AND broker = ? AND holding_type = ?',
+    [userEmail, 'upstox', 'POSITION']
+  );
+
+  const positions = positionsResult.data || [];
+  
+  for (const position of positions) {
+    if (!position.quantity || position.quantity === 0) {
+      continue;
+    }
+
+    await db.query(
+      `INSERT INTO User_Holdings 
+       (user_email, broker, holding_type, symbol, quantity, average_price, current_price, 
+        ltp, pnl, pnl_percentage, product, exchange, isin, raw_data) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userEmail,
+        'upstox',
+        'POSITION',
+        position.trading_symbol || position.symbol,
+        position.quantity || 0,
+        position.average_price || 0,
+        position.last_price || 0,
+        position.last_price || 0,
+        position.pnl || 0,
+        position.pnl_percentage || 0,
+        position.product || 'I',
+        position.exchange || 'NSE',
+        '',
+        JSON.stringify(position)
+      ]
+    );
+  }
+
+  logger.info(`Saved ${positions.length} Upstox positions for ${userEmail}`);
+  
+  return {
+    success: true,
+    count: positions.length,
+    positions
+  };
+}
   static async getProfile(sessionId, req) {
     if (!req.session.upstoxAccessToken) {
       throw new Error('Not authenticated with Upstox');
@@ -151,7 +206,11 @@ static async handleCallback(code, sessionId, req, userEmail) {  // ADD userEmail
   } catch (error) {
     logger.warn('Failed to auto-fetch Upstox holdings:', error.message);
   }
-
+try {
+    await this.fetchAndSavePositions(sessionId, userEmail, req);
+  } catch (error) {
+    logger.warn('Failed to auto-fetch Upstox positions:', error.message);
+  }
   return {
     success: true,
     message: 'Upstox authentication successful'

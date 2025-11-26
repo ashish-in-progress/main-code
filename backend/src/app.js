@@ -5,7 +5,7 @@ import bodyParser from 'body-parser';
 import { sessionConfig, attachUser } from './middleware/session.js';
 import { CORS_ORIGINS } from './config/constants.js';
 import { logger } from './utils/logger.js';
-
+import jobsRoutes from './routes/jobs.routes.js';
 // Import routes
 import authRoutes from './routes/auth.routes.js';
 import brokerRoutes from './routes/broker.routes.js';
@@ -45,13 +45,14 @@ app.use(attachUser);
 
 // System routes (health check, stats)
 app.use('/api', systemRoutes);
-
+// Jobs routes (testing/management)
 // Auth routes (no /api prefix for backward compatibility)
 app.use('/', authRoutes);
 
 // Broker management routes
 app.use('/api/broker', brokerRoutes);
 
+app.use('/api/jobs', jobsRoutes);
 // Chat routes (unified for all brokers)
 app.use('/api/chat', chatRoutes);
 

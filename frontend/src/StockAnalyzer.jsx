@@ -112,19 +112,13 @@ export default function StockDashboard() {
             <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
             {activeTab === "overview" && (
-              <Card
-                title="Market overview"
-                subtitle="Key indicators and price action"
-              >
+              <Card title="Market overview" subtitle="Key indicators and price action">
                 <OverviewTab data={data} getSignalColor={getSignalColor} />
               </Card>
             )}
 
             {activeTab === "patterns" && (
-              <Card
-                title="Historical pattern matches"
-                subtitle="Top similar periods from history and their future outcomes"
-              >
+              <Card title="Historical pattern matches" subtitle="Top similar periods from history and their future outcomes">
                 <PatternsTab
                   data={data}
                   expandedMatch={expandedMatch}
@@ -134,10 +128,7 @@ export default function StockDashboard() {
             )}
 
             {activeTab === "predictions" && (
-              <Card
-                title="Forecasts & scenarios"
-                subtitle="Scenario-based return projections based on matched patterns"
-              >
+              <Card title="Forecasts & scenarios" subtitle="Scenario-based return projections based on matched patterns">
                 <PredictionsTab data={data} />
               </Card>
             )}
@@ -296,24 +287,12 @@ function SearchSection(props) {
               ["1y", "1 Year"],
               ["2y", "2 Years"],
               ["5y", "5 Years"],
-              ["10y","10 years"]
+              ["10y", "10 Years"],
             ]}
           />
 
-          <NumberInput
-            label="Lookback (days)"
-            value={lookback}
-            setValue={setLookback}
-            min={5}
-            max={90}
-          />
-          <NumberInput
-            label="Top matches"
-            value={topN}
-            setValue={setTopN}
-            min={1}
-            max={20}
-          />
+          <NumberInput label="Lookback (days)" value={lookback} setValue={setLookback} min={5} max={90} />
+          <NumberInput label="Top matches" value={topN} setValue={setTopN} min={1} max={20} />
         </div>
       </form>
 
@@ -331,11 +310,7 @@ function Select({ label, value, onChange, options }) {
   return (
     <div className="field">
       <label className="field-label">{label}</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="field-select"
-      >
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="field-select">
         {options.map(([val, txt]) => (
           <option value={val} key={val}>
             {txt}
@@ -401,45 +376,54 @@ function OverviewTab({ data, getSignalColor }) {
     <div className="overview-layout">
       <Metrics data={data} getSignalColor={getSignalColor} />
       <MainCharts data={data} />
+      <CandlestickStrip data={data} />
     </div>
   );
 }
 
+// ==============================
+// METRICS
+// ==============================
 function Metrics({ data, getSignalColor }) {
   const d = data.indicators || {};
   const a = data.analysis || {};
 
   const priceChangeClass =
-    d.change_1d != null
-      ? d.change_1d >= 0
-        ? "metric-subvalue-positive"
-        : "metric-subvalue-negative"
-      : "metric-subvalue-neutral";
-function getCurrencySymbol(symbol) {
-  if (!symbol) return "$"; // default
+    d.change_1d != null ? (d.change_1d >= 0 ? "metric-subvalue-positive" : "metric-subvalue-negative") : "metric-subvalue-neutral";
 
-  symbol = symbol.toUpperCase();
+  function getCurrencySymbol(symbol) {
+    if (!symbol) return "$"; // default
 
-  if (symbol.endsWith(".NS") || symbol.endsWith(".BO")) {
-    return "₹"; // NSE/BSE use INR
+    symbol = symbol.toUpperCase();
+
+    if (symbol.endsWith(".NS") || symbol.endsWith(".BO")) {
+      return "₹"; // NSE/BSE use INR
+    }
+    return "$"; // everything else USD
   }
-  return "$"; // everything else USD
-}
   return (
     <div className="metrics-grid">
       <MetricCard
         label="Price"
         value={
-  d.current_price != null
-    ? `${getCurrencySymbol(data.symbol)}${d.current_price.toFixed(2)}`
-    : "--"
-}
+          d.current_price != null ? `${getCurrencySymbol(data.symbol)}${d.current_price.toFixed(2)}` : "--"
+        }
         subValue={
-          d.change_1d != null
-            ? `${d.change_1d >= 0 ? "+" : ""}${d.change_1d.toFixed(2)}%`
-            : null
+          d.change_1d != null ? `${d.change_1d >= 0 ? "+" : ""}${d.change_1d.toFixed(2)}%` : null
         }
         subColor={priceChangeClass}
+      />
+      <MetricCard
+        label="SMA 20"
+        value={
+          d.sma_20 != null ? `${getCurrencySymbol(data.symbol)}${d.sma_20.toFixed(2)}` : "--"
+        }
+      />
+      <MetricCard
+        label="SMA 50"
+        value={
+          d.sma_50 != null ? `${getCurrencySymbol(data.symbol)}${d.sma_50.toFixed(2)}` : "--"
+        }
       />
       <MetricCard
         label="RSI (14)"
@@ -476,78 +460,75 @@ function MetricCard({ label, value, subValue, subColor }) {
     <div className="metric-card">
       <div className="metric-label">{label}</div>
       <div className="metric-value">{value || "--"}</div>
-      {subValue && (
-        <div className={`metric-subvalue ${subColor || ""}`}>{subValue}</div>
-      )}
+      {subValue && <div className={`metric-subvalue ${subColor || ""}`}>{subValue}</div>}
     </div>
   );
 }
 
+// ==============================
+// MAIN CHARTS
+// ==============================
 function MainCharts({ data }) {
   const [history, setHistory] = React.useState([]);
 
-React.useEffect(() => {
-  async function loadHistory() {
-    try {
-      console.log("hi",data.symbol)
-      const res = await fetch(
-        `http://localhost:5500/history?symbol=${data.symbol}&period=${data.period}&interval=1d`
-      );
-      const json = await res.json();
-      console.log("hi",json)
+  React.useEffect(() => {
+    async function loadHistory() {
+      try {
+        const res = await fetch(
+          `http://localhost:5500/history?symbol=${data.symbol}&period=${data.period}&interval=1d`
+        );
+        const json = await res.json();
 
-      if (json?.data) {
-        setHistory(json.data);
+        if (json?.data) {
+          setHistory(json.data);
+        }
+      } catch (e) {
+        console.error("History fetch failed", e);
       }
-    } catch (e) {
-      console.error("History fetch failed", e);
     }
-  }
 
-  loadHistory();
-}, [data]);
-// const dates = history.map((d) => d.date);
-// const prices = history.map((d) => d.close);
-history.sort((a, b) => new Date(a.date) - new Date(b.date));
+    loadHistory();
+  }, [data]);
+
+  history.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   return (
     <div className="charts-grid">
       <div className="chart-main">
         <h3 className="chart-title">Price action</h3>
         <div className="chart-plot-wrapper">
-
           <Plot
-  data={[
-    {
-      x: history.map((d) => d.date),
-      open: history.map((d) => d.open),
-      high: history.map((d) => d.high),
-      low: history.map((d) => d.low),
-      close: history.map((d) => d.close),
-      increasing: { line: { color: "#10B981" } }, // green
-  decreasing: { line: { color: "#EF4444" } }, // red
-      type: "candlestick",
-    },
-  ]}
-  layout={{
-    autosize: true,
-    margin: { l: 40, r: 20, t: 20, b: 40 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    xaxis: {
-      tickfont: { color: "#6B7280" },
-      gridcolor: "#E5E7EB",
-      type: "date",
-    },
-    yaxis: {
-      tickfont: { color: "#6B7280" },
-      gridcolor: "#E5E7EB",
-    },
-  }}
-  useResizeHandler
-  style={{ width: "100%", height: "100%" }}
-  config={{ displayModeBar: false, responsive: true }}
-/>
+            data={[
+              {
+                x: history.map((d) => d.date),
+                open: history.map((d) => d.open),
+                high: history.map((d) => d.high),
+                low: history.map((d) => d.low),
+                close: history.map((d) => d.close),
+                increasing: { line: { color: "#10B981" } }, // green
+                decreasing: { line: { color: "#EF4444" } }, // red
+                type: "candlestick",
+              },
+            ]}
+            layout={{
+              autosize: true,
+              margin: { l: 40, r: 20, t: 20, b: 40 },
+              paper_bgcolor: "rgba(0,0,0,0)",
+              plot_bgcolor: "rgba(0,0,0,0)",
+              xaxis: {
+                tickfont: { color: "#6B7280" },
+                gridcolor: "#E5E7EB",
+                type: "date",
+              },
+              yaxis: {
+                tickfont: { color: "#6B7280" },
+                gridcolor: "#E5E7EB",
+              },
+            }}
+            useResizeHandler
+            style={{ width: "100%", height: "100%" }}
+            config={{ displayModeBar: false, responsive: true }}
+          />
         </div>
       </div>
 
@@ -556,26 +537,16 @@ history.sort((a, b) => new Date(a.date) - new Date(b.date));
           <h3 className="chart-ai-title">
             <Sparkles className="icon-sm" /> AI summary
           </h3>
-          <p className="chart-ai-text">
-            {data.analysis?.reason || "No explanation generated."}
-          </p>
+          <p className="chart-ai-text">{data.analysis?.reason || "No explanation generated."}</p>
         </div>
         <div className="chart-ai-info-grid">
           <Info
             label="Volatility"
-            value={
-              data.indicators?.volatility != null
-                ? `${data.indicators.volatility.toFixed(2)}%`
-                : "--"
-            }
+            value={data.indicators?.volatility != null ? `${data.indicators.volatility.toFixed(2)}%` : "--"}
           />
           <Info
             label="Volume ratio"
-            value={
-              data.indicators?.volume_ratio != null
-                ? `${data.indicators.volume_ratio.toFixed(2)}x`
-                : "--"
-            }
+            value={data.indicators?.volume_ratio != null ? `${data.indicators.volume_ratio.toFixed(2)}x` : "--"}
           />
         </div>
       </div>
@@ -596,17 +567,14 @@ function Info({ label, value }) {
 // PATTERNS TAB
 // ==============================
 function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
-  if (!data.matches || data.matches.length === 0) {
-    return (
-      <p className="text-muted">
-        No pattern matches found for this configuration.
-      </p>
-    );
+  // Use similarity_matches
+  if (!data.similarity_matches || data.similarity_matches.length === 0) {
+    return <p className="text-muted">No pattern matches found for this configuration.</p>;
   }
 
   return (
     <div className="patterns-list">
-      {data.matches.map((m, idx) => (
+      {data.similarity_matches.map((m, idx) => (
         <div key={idx} className="pattern-card">
           <button
             type="button"
@@ -614,24 +582,16 @@ function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
             onClick={() => setExpandedMatch(expandedMatch === idx ? null : idx)}
           >
             <div className="pattern-header-left">
-              <div className="pattern-rank">
-                #{m.rank ?? idx + 1}
-              </div>
+              <div className="pattern-rank">#{m.rank ?? idx + 1}</div>
               <div className="pattern-header-text">
                 <div className="pattern-dates">
                   {m.start_date} → {m.end_date}
                 </div>
-                <div className="pattern-subtitle">
-                  Historical regime • Similarity match
-                </div>
+                <div className="pattern-subtitle">Historical regime • Similarity match</div>
               </div>
             </div>
             <div className="pattern-header-right">
-              {m.score != null && (
-                <span className="pattern-score">
-                  {m.score.toFixed(1)}%
-                </span>
-              )}
+              {m.score != null && <span className="pattern-score">{m.score.toFixed(1)}%</span>}
               {expandedMatch === idx ? (
                 <ChevronUp className="icon-xs icon-muted" />
               ) : (
@@ -644,21 +604,15 @@ function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
             <div className="pattern-body">
               <div className="pattern-body-grid">
                 <div>
-                  <h4 className="pattern-section-title">
-                    Future returns after this pattern
-                  </h4>
+                  <h4 className="pattern-section-title">Future returns after this pattern</h4>
                   <div className="pattern-future-returns">
                     {m.future_returns &&
                       Object.entries(m.future_returns).map(([k, v]) => (
                         <div
                           key={k}
-                          className={`future-return-box ${
-                            v >= 0 ? "future-return-positive" : "future-return-negative"
-                          }`}
+                          className={`future-return-box ${v >= 0 ? "future-return-positive" : "future-return-negative"}`}
                         >
-                          <div className="future-return-label">
-                            {k}
-                          </div>
+                          <div className="future-return-label">{k}</div>
                           <div className="future-return-value">
                             {v >= 0 ? "+" : ""}
                             {v.toFixed(2)}%
@@ -688,11 +642,7 @@ function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
 // ==============================
 function PredictionsTab({ data }) {
   if (!data.predictions) {
-    return (
-      <p className="text-muted">
-        No prediction scenarios available for this configuration.
-      </p>
-    );
+    return <p className="text-muted">No prediction scenarios available for this configuration.</p>;
   }
 
   return (
@@ -700,11 +650,7 @@ function PredictionsTab({ data }) {
       {Object.entries(data.predictions).map(([k, v]) => (
         <div key={k} className="prediction-card">
           <div className="prediction-label">{k}</div>
-          <div
-            className={`prediction-value ${
-              v.mean >= 0 ? "prediction-positive" : "prediction-negative"
-            }`}
-          >
+          <div className={`prediction-value ${v.mean >= 0 ? "prediction-positive" : "prediction-negative"}`}>
             {v.mean >= 0 ? "+" : ""}
             {v.mean.toFixed(2)}%
           </div>
@@ -767,11 +713,21 @@ function AiReportTab({ data }) {
               )}
               <span>
                 AI status:{" "}
-                {metadata.ai_configured
-                  ? "Online and configured"
-                  : "Offline / not configured"}
+                {metadata.ai_configured ? "Online and configured" : "Offline / not configured"}
               </span>
             </div>
+            {metadata.avg_similarity != null && (
+              <div className="ai-meta-pill">
+                <Target className="icon-xs" />
+                <span>Avg similarity: {metadata.avg_similarity.toFixed(1)}%</span>
+              </div>
+            )}
+            {metadata.total_similarity_matches != null && (
+              <div className="ai-meta-pill">
+                <Activity className="icon-xs" />
+                <span>Matches: {metadata.total_similarity_matches}</span>
+              </div>
+            )}
             {metadata.generated_at && (
               <div className="ai-generated-at">
                 <Clock className="icon-xs" />
@@ -788,6 +744,45 @@ function AiReportTab({ data }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ==============================
+// CANDLESTICK STRIP (OVERVIEW TAB ADDITION)
+// ==============================
+function CandlestickStrip({ data }) {
+  const summary = data.candlestick_patterns?.summary;
+  const recent = data.candlestick_patterns?.recent || [];
+
+  if (!summary && recent.length === 0) return null;
+
+  return (
+    <div className="candle-strip">
+      {summary && (
+        <div className="candle-summary">
+          <span>Total: {summary.total_detected}</span>
+          <span>Bullish: {summary.bullish}</span>
+          <span>Bearish: {summary.bearish}</span>
+          <span>Confirmed: {summary.confirmed}</span>
+        </div>
+      )}
+
+      {recent.length > 0 && (
+        <div className="candle-chips">
+          {recent.slice(0, 5).map((p) => (
+            <div
+              key={p.date + p.name}
+              className={`candle-chip candle-chip-${p.type}`}
+              title={p.description}
+            >
+              <span className="candle-name">{p.name}</span>
+              <span className="candle-date">{p.date}</span>
+              <span className="candle-conf">{p.confidence}%</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

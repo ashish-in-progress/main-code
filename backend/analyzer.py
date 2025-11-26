@@ -25,7 +25,551 @@ CORS(app)
 # ==========================================
 # PATTERN MATCHING CORE LOGIC
 # ==========================================
+# ==========================================
+# CANDLESTICK PATTERN DEFINITIONS
+# ==========================================
+def convert_to_json_serializable(obj):
+    """Recursively convert numpy types to native Python types"""
+    import numpy as np
+    
+    if isinstance(obj, dict):
+        return {k: convert_to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+class PatternType:
+    BULLISH = "bullish"
+    BEARISH = "bearish"
+    NEUTRAL = "neutral"
+    REVERSAL_BULLISH = "reversal_bullish"
+    REVERSAL_BEARISH = "reversal_bearish"
 
+class CandlestickPatternDetector:
+    """Detects classical candlestick patterns"""
+    
+    def __init__(self):
+        self.min_body_ratio = 0.1
+        self.doji_threshold = 0.05
+        self.long_shadow_ratio = 2.0
+        self.engulfing_threshold = 0.9
+    def _detect_single_patterns(self, df, i) -> List[Dict]:
+        """Detect single candlestick patterns"""
+        patterns = []
+        row = df.iloc[i]
+        metrics = self._get_candle_metrics(row)
+        date = row['date'].strftime('%Y-%m-%d')
+        
+        # 1. DOJI - Small body, indecision
+        if metrics['body_ratio'] < self.doji_threshold:
+            patterns.append({
+                'name': 'Doji',
+                'type': PatternType.NEUTRAL,
+                'confidence': 75,
+                'date': date,
+                'index': i,
+                'description': 'Market indecision - potential reversal point',
+                'reliability': 'Medium',
+                'confirmation': False,
+                'components': {'price': metrics['close']}
+            })
+        
+        # 2. HAMMER - Long lower shadow, small body at top (bullish reversal)
+        if (metrics['lower_shadow'] > metrics['body'] * self.long_shadow_ratio and
+            metrics['upper_shadow'] < metrics['body'] * 0.3 and
+            metrics['body_ratio'] > self.min_body_ratio):
+            
+            patterns.append({
+                'name': 'Hammer',
+                'type': PatternType.REVERSAL_BULLISH,
+                'confidence': 80,
+                'date': date,
+                'index': i,
+                'description': 'Bullish reversal - buyers rejected lower prices',
+                'reliability': 'High',
+                'confirmation': False,
+                'components': {'price': metrics['close'], 'low': metrics['low']}
+            })
+        
+        # 3. SHOOTING STAR - Long upper shadow, small body at bottom (bearish reversal)
+        if (metrics['upper_shadow'] > metrics['body'] * self.long_shadow_ratio and
+            metrics['lower_shadow'] < metrics['body'] * 0.3 and
+            metrics['body_ratio'] > self.min_body_ratio):
+            
+            patterns.append({
+                'name': 'Shooting Star',
+                'type': PatternType.REVERSAL_BEARISH,
+                'confidence': 80,
+                'date': date,
+                'index': i,
+                'description': 'Bearish reversal - sellers rejected higher prices',
+                'reliability': 'High',
+                'confirmation': False,
+                'components': {'price': metrics['close'], 'high': metrics['high']}
+            })
+        
+        # 4. SPINNING TOP - Small body, long shadows both sides
+        if (metrics['body_ratio'] < 0.3 and
+            metrics['upper_shadow'] > metrics['body'] and
+            metrics['lower_shadow'] > metrics['body']):
+            
+            patterns.append({
+                'name': 'Spinning Top',
+                'type': PatternType.NEUTRAL,
+                'confidence': 65,
+                'date': date,
+                'index': i,
+                'description': 'Indecision - balance between buyers and sellers',
+                'reliability': 'Low',
+                'confirmation': False,
+                'components': {'price': metrics['close']}
+            })
+        
+        return patterns    
+    def detect_all_patterns(self, df: pd.DataFrame) -> List[Dict]:
+        """Scan entire dataframe for all patterns"""
+        all_patterns = []
+        
+        for i in range(2, len(df)):
+            # Single candle patterns
+            all_patterns.extend(self._detect_single_patterns(df, i))
+            
+            # Two candle patterns (need previous candle)
+            if i >= 1:
+                all_patterns.extend(self._detect_two_candle_patterns(df, i))
+            
+            # Three candle patterns (need 2 previous candles)
+            if i >= 2:
+                all_patterns.extend(self._detect_three_candle_patterns(df, i))
+        
+        return all_patterns
+    
+    def _get_candle_metrics(self, row):
+        """Calculate candlestick metrics"""
+        o, h, l, c = row['open'], row['high'], row['low'], row['close']
+        
+        body = abs(c - o)
+        total_range = h - l
+        upper_shadow = h - max(c, o)
+        lower_shadow = min(c, o) - l
+        
+        is_bullish = bool(c > o)  # ← Convert to native Python bool
+        
+        return {
+            'open': float(o), 
+            'high': float(h), 
+            'low': float(l), 
+            'close': float(c),
+            'body': float(body),
+            'range': float(total_range),
+            'upper_shadow': float(upper_shadow),
+            'lower_shadow': float(lower_shadow),
+            'is_bullish': is_bullish,
+            'body_ratio': float(body / (total_range + 1e-9))
+        }
+    def _detect_two_candle_patterns(self, df, i) -> List[Dict]:
+        """Detect two-candle patterns"""
+        patterns = []
+        
+        prev_row = df.iloc[i-1]
+        curr_row = df.iloc[i]
+        
+        prev_metrics = self._get_candle_metrics(prev_row)
+        curr_metrics = self._get_candle_metrics(curr_row)
+        
+        date = curr_row['date'].strftime('%Y-%m-%d')
+        
+        # 1. BULLISH ENGULFING - Large bullish candle engulfs previous bearish
+        if (not prev_metrics['is_bullish'] and curr_metrics['is_bullish'] and
+            curr_metrics['open'] <= prev_metrics['close'] and
+            curr_metrics['close'] >= prev_metrics['open'] and
+            curr_metrics['body'] > prev_metrics['body'] * self.engulfing_threshold):
+            
+            patterns.append({
+                'name': 'Bullish Engulfing',
+                'type': PatternType.REVERSAL_BULLISH,
+                'confidence': 85,
+                'date': date,
+                'index': i,
+                'description': 'Strong bullish reversal - buyers overwhelm sellers',
+                'reliability': 'High',
+                'confirmation': False,
+                'components': {
+                    'prev_close': prev_metrics['close'],
+                    'curr_close': curr_metrics['close']
+                }
+            })
+        
+        # 2. BEARISH ENGULFING - Large bearish candle engulfs previous bullish
+        if (prev_metrics['is_bullish'] and not curr_metrics['is_bullish'] and
+            curr_metrics['open'] >= prev_metrics['close'] and
+            curr_metrics['close'] <= prev_metrics['open'] and
+            curr_metrics['body'] > prev_metrics['body'] * self.engulfing_threshold):
+            
+            patterns.append({
+                'name': 'Bearish Engulfing',
+                'type': PatternType.REVERSAL_BEARISH,
+                'confidence': 85,
+                'date': date,
+                'index': i,
+                'description': 'Strong bearish reversal - sellers overwhelm buyers',
+                'reliability': 'High',
+                'confirmation': False,
+                'components': {
+                    'prev_close': prev_metrics['close'],
+                    'curr_close': curr_metrics['close']
+                }
+            })
+        
+        # 3. BULLISH HARAMI - Small bullish candle within previous large bearish
+        if (not prev_metrics['is_bullish'] and curr_metrics['is_bullish'] and
+            curr_metrics['open'] >= prev_metrics['close'] and
+            curr_metrics['close'] <= prev_metrics['open'] and
+            curr_metrics['body'] < prev_metrics['body'] * 0.5):
+            
+            patterns.append({
+                'name': 'Bullish Harami',
+                'type': PatternType.REVERSAL_BULLISH,
+                'confidence': 70,
+                'date': date,
+                'index': i,
+                'description': 'Potential bullish reversal - selling pressure weakening',
+                'reliability': 'Medium',
+                'confirmation': False,
+                'components': {
+                    'prev_close': prev_metrics['close'],
+                    'curr_close': curr_metrics['close']
+                }
+            })
+        
+        # 4. BEARISH HARAMI - Small bearish candle within previous large bullish
+        if (prev_metrics['is_bullish'] and not curr_metrics['is_bullish'] and
+            curr_metrics['open'] <= prev_metrics['close'] and
+            curr_metrics['close'] >= prev_metrics['open'] and
+            curr_metrics['body'] < prev_metrics['body'] * 0.5):
+            
+            patterns.append({
+                'name': 'Bearish Harami',
+                'type': PatternType.REVERSAL_BEARISH,
+                'confidence': 70,
+                'date': date,
+                'index': i,
+                'description': 'Potential bearish reversal - buying pressure weakening',
+                'reliability': 'Medium',
+                'confirmation': False,
+                'components': {
+                    'prev_close': prev_metrics['close'],
+                    'curr_close': curr_metrics['close']
+                }
+            })
+        
+        # 5. PIERCING LINE - Bullish reversal at downtrend bottom
+        if (not prev_metrics['is_bullish'] and curr_metrics['is_bullish'] and
+            curr_metrics['open'] < prev_metrics['low'] and
+            curr_metrics['close'] > (prev_metrics['open'] + prev_metrics['close']) / 2 and
+            curr_metrics['close'] < prev_metrics['open']):
+            
+            patterns.append({
+                'name': 'Piercing Line',
+                'type': PatternType.REVERSAL_BULLISH,
+                'confidence': 75,
+                'date': date,
+                'index': i,
+                'description': 'Bullish reversal - strong buying after gap down',
+                'reliability': 'Medium',
+                'confirmation': False,
+                'components': {
+                    'prev_close': prev_metrics['close'],
+                    'curr_close': curr_metrics['close']
+                }
+            })
+        
+        # 6. DARK CLOUD COVER - Bearish reversal at uptrend top
+        if (prev_metrics['is_bullish'] and not curr_metrics['is_bullish'] and
+            curr_metrics['open'] > prev_metrics['high'] and
+            curr_metrics['close'] < (prev_metrics['open'] + prev_metrics['close']) / 2 and
+            curr_metrics['close'] > prev_metrics['open']):
+            
+            patterns.append({
+                'name': 'Dark Cloud Cover',
+                'type': PatternType.REVERSAL_BEARISH,
+                'confidence': 75,
+                'date': date,
+                'index': i,
+                'description': 'Bearish reversal - strong selling after gap up',
+                'reliability': 'Medium',
+                'confirmation': False,
+                'components': {
+                    'prev_close': prev_metrics['close'],
+                    'curr_close': curr_metrics['close']
+                }
+            })
+        
+        return patterns
+    def convert_to_json_serializable(obj):
+        """Recursively convert numpy types to native Python types"""
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {k: convert_to_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_to_json_serializable(item) for item in obj]
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return obj
+    def _detect_three_candle_patterns(self, df, i) -> List[Dict]:
+        """Detect three-candle patterns"""
+        patterns = []
+        
+        c1 = self._get_candle_metrics(df.iloc[i-2])
+        c2 = self._get_candle_metrics(df.iloc[i-1])
+        c3 = self._get_candle_metrics(df.iloc[i])
+        
+        date = df.iloc[i]['date'].strftime('%Y-%m-%d')
+        
+        # 1. MORNING STAR - Bullish reversal (bearish, doji/small, bullish)
+        if (not c1['is_bullish'] and 
+            c2['body_ratio'] < 0.3 and
+            c3['is_bullish'] and
+            c3['close'] > (c1['open'] + c1['close']) / 2):
+            
+            patterns.append({
+                'name': 'Morning Star',
+                'type': PatternType.REVERSAL_BULLISH,
+                'confidence': 90,
+                'date': date,
+                'index': i,
+                'description': 'Strong bullish reversal - trend change confirmed',
+                'reliability': 'High',
+                'confirmation': True,
+                'components': {
+                    'c1_close': c1['close'],
+                    'c2_close': c2['close'],
+                    'c3_close': c3['close']
+                }
+            })
+        
+        # 2. EVENING STAR - Bearish reversal (bullish, doji/small, bearish)
+        if (c1['is_bullish'] and 
+            c2['body_ratio'] < 0.3 and
+            not c3['is_bullish'] and
+            c3['close'] < (c1['open'] + c1['close']) / 2):
+            
+            patterns.append({
+                'name': 'Evening Star',
+                'type': PatternType.REVERSAL_BEARISH,
+                'confidence': 90,
+                'date': date,
+                'index': i,
+                'description': 'Strong bearish reversal - trend change confirmed',
+                'reliability': 'High',
+                'confirmation': True,
+                'components': {
+                    'c1_close': c1['close'],
+                    'c2_close': c2['close'],
+                    'c3_close': c3['close']
+                }
+            })
+        
+        # 3. THREE WHITE SOLDIERS - Bullish continuation (3 consecutive bullish)
+        if (c1['is_bullish'] and c2['is_bullish'] and c3['is_bullish'] and
+            c2['close'] > c1['close'] and c3['close'] > c2['close'] and
+            c1['body_ratio'] > 0.5 and c2['body_ratio'] > 0.5 and c3['body_ratio'] > 0.5):
+            
+            patterns.append({
+                'name': 'Three White Soldiers',
+                'type': PatternType.BULLISH,
+                'confidence': 85,
+                'date': date,
+                'index': i,
+                'description': 'Strong bullish momentum - sustained buying pressure',
+                'reliability': 'High',
+                'confirmation': True,
+                'components': {
+                    'c1_close': c1['close'],
+                    'c2_close': c2['close'],
+                    'c3_close': c3['close']
+                }
+            })
+        
+        # 4. THREE BLACK CROWS - Bearish continuation (3 consecutive bearish)
+        if (not c1['is_bullish'] and not c2['is_bullish'] and not c3['is_bullish'] and
+            c2['close'] < c1['close'] and c3['close'] < c2['close'] and
+            c1['body_ratio'] > 0.5 and c2['body_ratio'] > 0.5 and c3['body_ratio'] > 0.5):
+            
+            patterns.append({
+                'name': 'Three Black Crows',
+                'type': PatternType.BEARISH,
+                'confidence': 85,
+                'date': date,
+                'index': i,
+                'description': 'Strong bearish momentum - sustained selling pressure',
+                'reliability': 'High',
+                'confirmation': True,
+                'components': {
+                    'c1_close': c1['close'],
+                    'c2_close': c2['close'],
+                    'c3_close': c3['close']
+                }
+            })
+        
+        return patterns
+class PatternValidator:
+    """Validates candlestick patterns with volume and trend context"""
+    
+    def __init__(self):
+        self.trend_period = 20  # Days to determine trend
+        self.volume_period = 20  # Days for average volume
+    
+    def validate_patterns(self, patterns: List[Dict], df: pd.DataFrame) -> List[Dict]:
+        """Add confirmation signals to detected patterns"""
+        validated = []
+        
+        for pattern in patterns:
+            idx = pattern['index']
+            
+            # Skip if not enough historical data
+            if idx < self.trend_period:
+                validated.append(pattern)
+                continue
+            
+            # Get trend context
+            trend = self._get_trend(df, idx)
+            
+            # Get volume confirmation
+            volume_confirmed = self._check_volume(df, idx)
+            
+            # Add validation data
+            pattern['trend_context'] = trend
+            pattern['volume_confirmed'] = volume_confirmed
+            
+            # Update confirmation status
+            if volume_confirmed and self._is_trend_appropriate(pattern, trend):
+                pattern['confirmation'] = True
+                pattern['confidence'] = min(pattern['confidence'] + 10, 100)
+            
+            validated.append(pattern)
+        
+        return validated
+    
+    def _get_trend(self, df: pd.DataFrame, idx: int) -> str:
+        """Determine if we're in uptrend, downtrend, or sideways"""
+        if idx < self.trend_period:
+            return "unknown"
+        
+        recent_closes = df['close'].iloc[idx - self.trend_period:idx].values
+        sma = np.mean(recent_closes)
+        current_price = df['close'].iloc[idx]
+        
+        # Calculate trend strength
+        slope = np.polyfit(range(len(recent_closes)), recent_closes, 1)[0]
+        
+        if slope > 0 and current_price > sma * 1.02:
+            return "uptrend"
+        elif slope < 0 and current_price < sma * 0.98:
+            return "downtrend"
+        else:
+            return "sideways"
+    
+    def _check_volume(self, df: pd.DataFrame, idx: int) -> bool:
+        """Check if volume confirms the pattern"""
+        if idx < self.volume_period or 'volume' not in df.columns:
+            return False
+        
+        current_volume = df['volume'].iloc[idx]
+        avg_volume = df['volume'].iloc[idx - self.volume_period:idx].mean()
+        
+        # Volume should be at least 1.2x average for confirmation
+        return current_volume > avg_volume * 1.2
+    
+    def _is_trend_appropriate(self, pattern: Dict, trend: str) -> bool:
+        """Check if pattern makes sense in current trend context"""
+        pattern_type = pattern['type']
+        
+        # Bullish reversal patterns should appear in downtrends
+        if pattern_type == PatternType.REVERSAL_BULLISH:
+            return trend == "downtrend"
+        
+        # Bearish reversal patterns should appear in uptrends
+        if pattern_type == PatternType.REVERSAL_BEARISH:
+            return trend == "uptrend"
+        
+        # Continuation patterns should match the trend
+        if pattern_type == PatternType.BULLISH:
+            return trend == "uptrend"
+        
+        if pattern_type == PatternType.BEARISH:
+            return trend == "downtrend"
+        
+        # Neutral patterns work in any trend
+        return True
+def calculate_pattern_statistics(patterns: List[Dict], df: pd.DataFrame) -> Dict:
+    """Calculate historical success rates for detected patterns"""
+    
+    if not patterns:
+        return {}
+    
+    stats = {}
+    horizons = [1, 3, 5, 7, 10]  # Days ahead to check
+    
+    for pattern in patterns:
+        pattern_name = pattern['name']
+        pattern_type = pattern['type']
+        idx = pattern['index']
+        
+        if pattern_name not in stats:
+            stats[pattern_name] = {
+                'count': 0,
+                'type': pattern_type,
+                'outcomes': {f'{h}d': [] for h in horizons}
+            }
+        
+        stats[pattern_name]['count'] += 1
+        
+        # Calculate future returns for this pattern occurrence
+        for horizon in horizons:
+            future_idx = idx + horizon
+            
+            if future_idx < len(df):
+                base_price = df['close'].iloc[idx]
+                future_price = df['close'].iloc[future_idx]
+                return_pct = ((future_price - base_price) / base_price) * 100
+                
+                stats[pattern_name]['outcomes'][f'{horizon}d'].append(return_pct)
+    
+    # Calculate summary statistics
+    for pattern_name in stats:
+        for horizon in [f'{h}d' for h in horizons]:
+            outcomes = stats[pattern_name]['outcomes'][horizon]
+            
+            if outcomes:
+                stats[pattern_name]['outcomes'][horizon] = {
+                    'mean': round(np.mean(outcomes), 2),
+                    'median': round(np.median(outcomes), 2),
+                    'success_rate': round(sum(1 for x in outcomes if x > 0) / len(outcomes) * 100, 1),
+                    'avg_gain': round(np.mean([x for x in outcomes if x > 0]), 2) if any(x > 0 for x in outcomes) else 0,
+                    'avg_loss': round(np.mean([x for x in outcomes if x < 0]), 2) if any(x < 0 for x in outcomes) else 0,
+                    'count': len(outcomes)
+                }
+            else:
+                stats[pattern_name]['outcomes'][horizon] = None
+    
+    return stats
 def mmps_similarity(query_df, candidate_df):
     """Multi-Metric Pattern Similarity (MMPS) - Returns score 0-100"""
     L = min(len(query_df), len(candidate_df))
@@ -187,22 +731,75 @@ class EnhancedPatternEngine:
             'analysis': {'signal': 'NEUTRAL', 'confidence': 0, 'reason': reason},
             'debug_info': {'error': reason}
         }
-    
-    def _calculate_predictions(self, matches: List[Dict]) -> Dict:
+    def find_similar_patterns(self, df: pd.DataFrame, top_n: int = 5) -> Dict:
+        """Main pattern matching function"""
+        if df is None or len(df) < self.lookback_days + 30 + 10:
+            return self._empty_result("Not enough historical data")
+        
+        matches_df = self.find_most_similar_pattern(df, window_size=self.lookback_days, top_n=top_n)
+        
+        if matches_df.empty:
+            return self._empty_result("No patterns found")
+        
+        matches = matches_df.to_dict('records')
+        predictions = self._calculate_predictions(matches, df)  # ← Pass df here
+        analysis = self._generate_analysis(matches, predictions)
+        
+        return {
+            'matches': matches,
+            'predictions': predictions,
+            'analysis': analysis,
+            'debug_info': {'method': 'Enhanced MMPS'}
+        }
+    def _calculate_predictions(self, matches: List[Dict], df: pd.DataFrame) -> Dict:
+        """Calculate REAL predictions based on historical pattern outcomes"""
         if not matches: 
             return {}
         
         predictions = {}
-        for horizon in ['1d', '3d', '5d', '7d', '10d']:
-            predictions[horizon] = {
-                'mean': round(np.random.uniform(-2, 3), 2),
-                'median': round(np.random.uniform(-1, 2), 2),
-                'std': round(np.random.uniform(1, 4), 2),
-                'min': round(np.random.uniform(-5, -1), 2),
-                'max': round(np.random.uniform(2, 8), 2)
-            }
+        horizons = {'1d': 1, '3d': 3, '5d': 5, '7d': 7, '10d': 10}
+        
+        for period, days in horizons.items():
+            returns_list = []
+            
+            # Collect actual historical returns for each match
+            for match in matches:
+                start_idx = match['start_idx']
+                window_size = self.lookback_days
+                pattern_end_idx = start_idx + window_size
+                
+                # Check if we have future data
+                future_idx = pattern_end_idx + days
+                if future_idx < len(df):
+                    base_price = df['close'].iloc[pattern_end_idx]
+                    future_price = df['close'].iloc[future_idx]
+                    return_pct = ((future_price - base_price) / base_price) * 100
+                    returns_list.append(return_pct)
+            
+            # Calculate statistics from REAL historical returns
+            if returns_list:
+                predictions[period] = {
+                    'mean': round(float(np.mean(returns_list)), 2),
+                    'median': round(float(np.median(returns_list)), 2),
+                    'std': round(float(np.std(returns_list)), 2),
+                    'min': round(float(np.min(returns_list)), 2),
+                    'max': round(float(np.max(returns_list)), 2),
+                    'count': len(returns_list),
+                    'positive_rate': round(sum(1 for r in returns_list if r > 0) / len(returns_list) * 100, 1)
+                }
+            else:
+                # No future data available for this horizon
+                predictions[period] = {
+                    'mean': None,
+                    'median': None,
+                    'std': None,
+                    'min': None,
+                    'max': None,
+                    'count': 0,
+                    'positive_rate': None
+                }
+        
         return predictions
-    
     def _generate_analysis(self, matches: List[Dict], predictions: Dict) -> Dict:
         if not matches: 
             return {'signal': 'NEUTRAL', 'confidence': 0, 'reason': 'Insufficient data'}
@@ -231,7 +828,24 @@ class StockAnalyzer:
     def __init__(self, api_base_url):
         self.api_base_url = api_base_url
         self.pattern_engine = None
-    
+    def detect_candlestick_patterns(self, df, lookback_days=90):
+        """Detect classical candlestick patterns in recent data"""
+        if df is None or df.empty:
+            return []
+        
+        # Only analyze recent data (last lookback_days)
+        recent_df = df.tail(lookback_days).reset_index(drop=True)
+        
+        # Initialize detector
+        detector = CandlestickPatternDetector()
+        
+        # Detect all patterns
+        all_patterns = detector.detect_all_patterns(recent_df)
+        
+        # Sort by date (most recent first)
+        all_patterns.sort(key=lambda x: x['date'], reverse=True)
+        
+        return all_patterns
     def fetch_data(self, symbol, period="1y", interval="1d"):
         """Fetch stock data from external API"""
         try:
@@ -383,7 +997,8 @@ def get_ai_insights(stock_data):
     context = build_pattern_context(stock_data)
     print(f"Context built: {len(context)} characters")
     
-    expert_prompt = f"""Analyze this stock pattern data:\n\n{context}\n\n
+    expert_prompt = f"""Analyze this indian stock pattern data:\n\n{context}\n\n
+    give only in inr
 Provide a comprehensive analysis with:
 
 1. **PATTERN IDENTIFICATION**
@@ -481,7 +1096,7 @@ def calculate_future_returns(df, start_idx, window_size):
 @app.route('/analyze', methods=['GET'])
 def analyze_stock():
     """
-    Main endpoint for stock analysis
+    Enhanced endpoint with TRUE candlestick pattern recognition
     Parameters:
     - symbol: Stock symbol (e.g., TCS.NS)
     - period: Time period (1mo, 3mo, 6mo, 1y, 2y, 5y)
@@ -513,39 +1128,53 @@ def analyze_stock():
         if df is None or len(df) == 0:
             return jsonify({"error": f"Failed to fetch data for {symbol}"}), 404
         
-        # Run pattern analysis
+        print(f"\n=== Analyzing {symbol} ===")
+        print(f"Data points: {len(df)}")
+        
+        # 1. Run similarity-based pattern analysis
         pattern_result = analyzer.pattern_engine.find_similar_patterns(df, top_n=top_n)
+        
+        # 2. Detect classical candlestick patterns
+        print("Detecting candlestick patterns...")
+        candlestick_patterns = analyzer.detect_candlestick_patterns(df, lookback_days=90)
+        
+        # 3. Validate patterns with volume and trend
+        print("Validating patterns...")
+        validator = PatternValidator()
+        validated_patterns = validator.validate_patterns(candlestick_patterns, df)
+        
+        # 4. Calculate pattern statistics
+        print("Calculating pattern statistics...")
+        pattern_stats = calculate_pattern_statistics(validated_patterns, df)
+        
+        # 5. Calculate technical indicators
         indicators = analyzer.calculate_indicators(df)
         
-        # Prepare chart data
-        chart_data = {
-            "dates": df['date'].tail(90).dt.strftime('%Y-%m-%d').tolist(),
-            "prices": df['close'].tail(90).tolist()
-        }
+        
+        # Get recent patterns only (last 30 days)
+        recent_patterns = [p for p in validated_patterns if p['index'] >= len(df) - 30]
         
         # Prepare stock data for AI
         stock_data = {
             'symbol': symbol,
             'indicators': indicators,
             'pattern_result': pattern_result,
+            'candlestick_patterns': recent_patterns,
+            'pattern_stats': pattern_stats,
             'lookback_days': lookback
         }
         
-        # Get AI insights (FIXED)
-        print(f"\n=== Generating AI insights for {symbol} ===")
+        # Get AI insights
+        print(f"Generating AI insights for {symbol}...")
         ai_insights = get_ai_insights(stock_data)
-        print(f"AI insights result: {ai_insights.get('analysis') is not None}")
         
-        # Initialize chain once for all match insights
+        # Initialize chain for match insights
         chain = init_langchain()
         
         # Build enhanced matches with future returns and AI insights
         enhanced_matches = []
         for idx, match in enumerate(pattern_result['matches']):
-            # Calculate actual historical returns after this pattern
             future_returns = calculate_future_returns(df, match['start_idx'], lookback)
-            
-            # Get AI insight for this specific match (FIXED)
             match_ai_insight = get_match_ai_insight(match, idx, symbol, chain)
             
             enhanced_matches.append({
@@ -559,7 +1188,7 @@ def analyze_stock():
                 "ai_insight": match_ai_insight
             })
         
-        # Build response matching React component expectations
+        # Build comprehensive response
         response = {
             "symbol": symbol,
             "period": period,
@@ -575,63 +1204,45 @@ def analyze_stock():
                 "reason": pattern_result['analysis'].get('reason', ''),
             },
             
-            "matches": enhanced_matches,
+            # Similarity-based matches
+            "similarity_matches": enhanced_matches,
             
-            "chart": chart_data,
+            # NEW: Classical candlestick patterns
+            "candlestick_patterns": {
+                "recent": recent_patterns[:10],  # Last 10 recent patterns
+                "all": validated_patterns,
+                "statistics": pattern_stats,
+                "summary": {
+                    "total_detected": len(validated_patterns),
+                    "bullish": sum(1 for p in recent_patterns if 'bullish' in p['type'].lower()),
+                    "bearish": sum(1 for p in recent_patterns if 'bearish' in p['type'].lower()),
+                    "confirmed": sum(1 for p in recent_patterns if p['confirmation'])
+                }
+            },
+            
             
             "ai_report": ai_insights.get('analysis'),
-            "report": ai_insights.get('analysis'),  # Fallback field
-            "ai_error": ai_insights.get('error'),  # Include error if any
+            "ai_error": ai_insights.get('error'),
             
             "predictions": pattern_result.get('predictions', {}),
             
             "metadata": {
-                "total_matches": len(enhanced_matches),
+                "total_similarity_matches": len(enhanced_matches),
+                "total_candlestick_patterns": len(validated_patterns),
                 "avg_similarity": round(np.mean([m['score'] for m in enhanced_matches]), 2) if enhanced_matches else 0,
                 "generated_at": datetime.now().isoformat(),
                 "ai_configured": chain is not None
             }
         }
         
+        print(f"✓ Analysis complete for {symbol}")
+        response = convert_to_json_serializable(response)  # ← Add this line
         return jsonify(response), 200
         
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-    
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0"
-    }), 200
-
-@app.route('/', methods=['GET'])
-def home():
-    """API documentation"""
-    return jsonify({
-        "name": "Stock Pattern Analysis API",
-        "version": "1.0.0",
-        "endpoints": {
-            "/analyze": {
-                "method": "GET",
-                "parameters": {
-                    "symbol": "Stock symbol (e.g., TCS.NS, AAPL)",
-                    "period": "Time period (1mo, 3mo, 6mo, 1y, 2y, 5y,10y)",
-                    "lookback": "Pattern length in days (5-90, default: 30)",
-                    "top_n": "Number of matches (1-20, default: 5)"
-                },
-                "example": "/analyze?symbol=TCS.NS&period=6mo&lookback=5&top_n=5"
-            },
-            "/health": {
-                "method": "GET",
-                "description": "Health check endpoint"
-            }
-        }
-    }), 200
 
 if __name__ == '__main__':
     port = 8000

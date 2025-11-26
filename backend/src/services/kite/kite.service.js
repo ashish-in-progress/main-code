@@ -140,6 +140,118 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
     holdings
   };
 }
+static async fetchAndSavePositions(sessionId, userEmail) {
+  if (!kiteAgents.has(sessionId)) {
+    throw new Error('Kite agent not initialized');
+  }
+
+  const client = kiteClients.get(sessionId);
+  
+  // Call positions tool
+  const positionsResult = await client.callTool("get_positions", {});
+  console.log('Raw positions result:', positionsResult);
+  const positionsText = client.extractTextFromResult(positionsResult);
+  console.log('Extracted text:', positionsText);
+  
+  // Parse positions
+  let positionsData;
+  try {
+    positionsData = JSON.parse(positionsText);
+    console.log('Parsed positions data:', positionsData);
+  } catch (error) {
+    logger.error('Failed to parse Kite positions:', error.message);
+    throw new Error('Failed to parse positions data');
+  }
+
+  // Save to database
+  const db = (await import('../../config/db.js')).db;
+  
+  // Clear old positions for this user/broker
+  await db.query(
+    'DELETE FROM User_Holdings WHERE user_email = ? AND broker = ? AND holding_type = ?',
+    [userEmail, 'kite', 'POSITION']
+  );
+
+  // Handle different response formats:
+  // 1. Direct array: [{...}, {...}]
+  // 2. Object with net: {net: [{...}]}
+  // 3. Object with data.net: {data: {net: [{...}]}}
+  let positions;
+  if (Array.isArray(positionsData)) {
+    positions = positionsData;  // Direct array
+  } else if (positionsData.net && Array.isArray(positionsData.net)) {
+    positions = positionsData.net;
+  } else if (positionsData.data?.net && Array.isArray(positionsData.data.net)) {
+    positions = positionsData.data.net;
+  } else {
+    positions = [];
+    logger.warn('Unexpected positions data format:', positionsData);
+  }
+
+  console.log(`Found ${positions.length} positions before deduplication`);
+  
+  // Deduplicate positions by creating a map with unique keys
+  const uniquePositions = new Map();
+  for (const position of positions) {
+    const key = `${position.tradingsymbol}-${position.exchange}-${position.product}`;
+    
+    // Skip if quantity is 0 (closed position)
+    if (!position.quantity || position.quantity === 0) {
+      continue;
+    }
+    
+    // Keep first occurrence
+    if (!uniquePositions.has(key)) {
+      uniquePositions.set(key, position);
+    }
+  }
+
+  const uniquePositionsArray = Array.from(uniquePositions.values());
+  console.log(`Saving ${uniquePositionsArray.length} unique positions after deduplication`);
+  
+  for (const position of uniquePositionsArray) {
+    // Determine holding type: CNC with overnight_quantity = 0 means it's a holding
+    const holdingType = position.product === 'CNC' && position.overnight_quantity === 0 
+      ? 'HOLDING' 
+      : 'POSITION';
+
+    // Calculate PnL percentage
+    const pnlPercentage = position.average_price > 0 && position.quantity !== 0
+      ? ((position.pnl / (position.average_price * Math.abs(position.quantity))) * 100) 
+      : 0;
+
+    await db.query(
+      `INSERT INTO User_Holdings 
+       (user_email, broker, holding_type, symbol, quantity, average_price, current_price, 
+        ltp, pnl, pnl_percentage, product, exchange, isin, raw_data) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userEmail,
+        'kite',
+        holdingType,
+        position.tradingsymbol || position.symbol,
+        position.quantity || 0,
+        position.average_price || 0,
+        position.last_price || 0,
+        position.last_price || 0,
+        position.pnl || position.m2m || 0,
+        pnlPercentage,
+        position.product || 'MIS',
+        position.exchange || 'NSE',
+        '',
+        JSON.stringify(position)
+      ]
+    );
+  }
+
+  logger.info(`Saved ${uniquePositionsArray.length} unique Kite positions/holdings for ${userEmail}`);
+  
+  return {
+    success: true,
+    count: uniquePositionsArray.length,
+    positions: uniquePositionsArray
+  };
+}
   static async verifyAuth(sessionId, userEmail) {  // ADD userEmail parameter
   if (!kiteClients.has(sessionId)) {
     throw new Error('Not connected to Kite');
@@ -183,7 +295,11 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
     } catch (error) {
       logger.warn('Failed to auto-fetch Kite holdings:', error.message);
     }
-
+ try {
+    await this.fetchAndSavePositions(sessionId, userEmail);
+  } catch (error) {
+    logger.warn('Failed to auto-fetch Kite positions:', error.message);
+  }
     return {
       success: true,
       authenticated: true,

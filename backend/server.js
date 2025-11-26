@@ -3,6 +3,7 @@ import app from './src/app.js';
 import { PORT } from './src/config/constants.js';
 import { logger } from './src/utils/logger.js';
 import { cleanupAll } from './src/state/store.js';
+import { JobScheduler } from './src/jobs/scheduler.js';  // 🆕 ADD THIS
 import dotenv from 'dotenv';
 dotenv.config();
 // Start server
@@ -12,11 +13,25 @@ const server = app.listen(PORT, () => {
   logger.info(`🤖 AI Framework: LangChain.js with Azure OpenAI`);
   logger.info(`🌐 CORS enabled for local development`);
   logger.info(`✅ Server is ready to accept connections`);
+  try {
+    JobScheduler.start();
+    logger.info('📅 Cron jobs initialized');
+  } catch (error) {
+    logger.error('Failed to start job scheduler:', error.message);
+  }
 });
 // ==================== GRACEFUL SHUTDOWN ====================
 
 function gracefulShutdown(signal) {
   logger.info(`${signal} received, starting graceful shutdown...`);
+  
+  // 🆕 STOP ALL CRON JOBS FIRST
+  try {
+    JobScheduler.stop();
+    logger.info('📅 Cron jobs stopped');
+  } catch (error) {
+    logger.error('Error stopping jobs:', error.message);
+  }
   
   // Stop accepting new connections
   server.close(() => {
@@ -51,3 +66,5 @@ process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
   gracefulShutdown('UNHANDLED_REJECTION');
 });
+
+

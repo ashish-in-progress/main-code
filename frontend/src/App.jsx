@@ -3,7 +3,7 @@ import API from "./api.js";
 import Login from "./Login.jsx";
 import Signup from "./Signup.jsx";
 import MainApp from "./MainApp";
-
+import "./App.css"
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);

@@ -4,7 +4,7 @@ import axios from "axios";
 import PortfolioSuggestor from "./PortfolioSuggestor.jsx";
 import StockAnalyzer from "./StockAnalyzer.jsx";
 import PortfolioHoldings from "./PortfolioHoldings.jsx";
-
+import InsightsPage from "./InsightsPage.jsx";
 // API Configuration
 const API_BASE_URL = "http://localhost:5000/api";
 
@@ -14,7 +14,7 @@ axios.defaults.baseURL = API_BASE_URL;
 
 export default function MainApp() {
   // View Management
-  const [activeView, setActiveView] = useState("trading"); // 'trading', 'holdings', 'portfolio', 'analyzer'
+  const [activeView, setActiveView] = useState("trading");  // 'trading', 'holdings', 'portfolio', 'analyzer'
 
   // Broker State
   const [activeBroker, setActiveBroker] = useState("fyers");
@@ -492,7 +492,12 @@ export default function MainApp() {
               >
                 📊 Holdings
               </button>
-
+              <button
+  className={`btn ${activeView === "insights" ? "btn-primary" : "btn-secondary"}`}
+  onClick={() => setActiveView("insights")}
+>
+  📧 Insights
+</button>
               <button
                 className={`btn ${activeView === "portfolio" ? "btn-primary" : "btn-secondary"}`}
                 onClick={() => setActiveView("portfolio")}
@@ -521,28 +526,28 @@ export default function MainApp() {
 
         {/* DASHBOARD CONTENT */}
         <div className="dashboard-container">
-          {activeView === "analyzer" ? (
-            // ANALYZER FULL-PAGE OVERLAY (LIGHT THEME)
-            <div className="analyzer-overlay">
-              <div className="analyzer-header">
-                <button
-                  className="analyzer-back-btn"
-                  onClick={() => setActiveView("trading")}
-                >
-                  ← Back
-                </button>
-                <h2 className="analyzer-title">Market Pattern Analyzer</h2>
-              </div>
-              <div className="analyzer-body">
-                {/* Your existing StockAnalyzer component */}
-                <StockAnalyzer />
-              </div>
-            </div>
-          ) : activeView === "holdings" ? (
-            <PortfolioHoldings onBack={() => setActiveView("trading")} />
-          ) : activeView === "portfolio" ? (
-            <PortfolioSuggestor onBackToTrading={() => setActiveView("trading")} />
-          ) : (
+          {activeView === "insights" ? (
+  <InsightsPage 
+    onBack={() => setActiveView("trading")} 
+    userEmail={userInfo?.user?.email || userInfo?.session_id}
+  />
+) : activeView === "holdings" ? (
+  <PortfolioHoldings onBack={() => setActiveView("trading")} />
+) : activeView === "portfolio" ? (
+  <PortfolioSuggestor onBackToTrading={() => setActiveView("trading")} />
+) : activeView === "analyzer" ? (
+  <div className="analyzer-overlay">
+    <div className="analyzer-header">
+      <button className="analyzer-back-btn" onClick={() => setActiveView("trading")}>
+        ← Back
+      </button>
+      <h2 className="analyzer-title">Market Pattern Analyzer</h2>
+    </div>
+    <div className="analyzer-body">
+      <StockAnalyzer />
+    </div>
+  </div>
+) : (
             /* CHAT VIEW */
             <div className="chat-card">
               <div className="chat-header">
