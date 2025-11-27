@@ -24,7 +24,7 @@ import {
 
 import "./analyzer.css";
 
-const API_BASE_URL = "https://33trpk9t-5000.inc1.devtunnels.ms";
+const API_BASE_URL = "https://33trpk9t-5500.inc1.devtunnels.ms";
 
 // ==============================
 // ROOT DASHBOARD
@@ -475,7 +475,7 @@ function MainCharts({ data }) {
     async function loadHistory() {
       try {
         const res = await fetch(
-          `http://localhost:5500/history?symbol=${data.symbol}&period=${data.period}&interval=1d`
+          `/history?symbol=${data.symbol}&period=${data.period}&interval=1d`
         );
         const json = await res.json();
 
