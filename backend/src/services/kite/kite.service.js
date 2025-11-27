@@ -179,21 +179,25 @@ static async parseJsonFromText(text) {
 }
 
 static normalizeHoldingEntry(raw) {
-  // Normalize a single holding/position object shape to our DB schema
   const n = raw || {};
+  
+  // Include t1_quantity in the quantity calculation
   const quantity = Number(n.quantity ?? n.net_quantity ?? n.used_quantity ?? 0) || 0;
+  const t1_quantity = Number(n.t1_quantity ?? 0) || 0;
+  const total_quantity = quantity + t1_quantity; // ✅ Total holdings including unsettled
+  
   const average_price = Number(n.average_price ?? n.avg_price ?? n.avg ?? 0) || 0;
   const last_price = Number(n.last_price ?? n.last_trade_price ?? n.last_price) || 0;
   const pnl = Number(n.pnl ?? n.profit_loss ?? n.m2m ?? 0) || 0;
 
-  const pnl_percentage = (average_price > 0 && quantity !== 0)
-    ? (pnl / (average_price * Math.abs(quantity))) * 100
+  const pnl_percentage = (average_price > 0 && total_quantity !== 0)
+    ? (pnl / (average_price * Math.abs(total_quantity))) * 100
     : 0;
 
   return {
     tradingsymbol: n.tradingsymbol || n.symbol || '',
     exchange: n.exchange || 'NSE',
-    quantity,
+    quantity: total_quantity, // ✅ Use total quantity
     average_price,
     last_price,
     ltp: last_price,
@@ -221,6 +225,7 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
   let holdingsResult;
   try {
     holdingsResult = await client.callTool("get_holdings", {});
+    console.log(holdingsResult)
   } catch (err) {
     logger.error('Error calling get_holdings tool:', err.message);
     throw new Error('Failed to call get_holdings tool: ' + err.message);
