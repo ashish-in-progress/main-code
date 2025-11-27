@@ -14,7 +14,11 @@ export class StockInsightsJob {
 
     try {
       // Initialize services
-      TavilyService.initialize();
+      const tavilyReady = TavilyService.initialize();
+      if (!tavilyReady) {
+        logger.warn('⚠️ Tavily not available, continuing without news');
+      }
+      
       AIInsightsService.initialize();
       EmailService.initialize();
 
@@ -68,7 +72,7 @@ export class StockInsightsJob {
    * Process insights for a single user
    */
   static async processUserInsights(userEmail) {
-    logger.info(`Processing insights for ${userEmail}`);
+    logger.info(`📊 Processing insights for ${userEmail}`);
 
     // 1. Fetch user's holdings from database
     const holdings = await this.getUserHoldings(userEmail);
@@ -80,32 +84,62 @@ export class StockInsightsJob {
 
     logger.info(`Found ${holdings.length} holdings for ${userEmail}`);
 
-    // 2. Get market sentiment
-    const marketSentiment = await TavilyService.getMarketSentiment();
+    // 2. Get market sentiment (only once per user)
+    let marketSentiment = null;
+    try {
+      marketSentiment = await TavilyService.getMarketSentiment();
+    } catch (error) {
+      logger.warn('Failed to fetch market sentiment:', error.message);
+      marketSentiment = { summary: 'Market data unavailable', articles: [] };
+    }
 
     // 3. Analyze each holding
     const analyzedHoldings = [];
+    const uniqueSymbols = [...new Set(holdings.map(h => h.symbol))];
+
+    logger.info(`Analyzing ${uniqueSymbols.length} unique symbols...`);
 
     for (const holding of holdings) {
       try {
-        logger.info(`Analyzing ${holding.symbol}...`);
+        logger.info(`  📈 Analyzing ${holding.symbol}...`);
 
-        // Get technical analysis
+        // Get technical analysis from your API
         const technicalData = await TechnicalService.analyzeTechnicals(
           holding.symbol,
           holding.broker,
           holding.current_price
         );
 
-        // Get latest news
-        const news = await TavilyService.searchStockNews("NSE:"+holding.symbol, null, 5);
+        // Get company name for better news search
+        const companyName = TavilyService.getCompanyName(holding.symbol);
+
+        // Get latest news (with error handling)
+        let news = [];
+        try {
+          news = await TavilyService.searchStockNews(holding.symbol, companyName, 3);
+          if (news.length > 0) {
+            logger.info(`    ✅ Found ${news.length} news articles`);
+          } else {
+            logger.warn(`    ⚠️ No news found for ${holding.symbol}`);
+          }
+        } catch (error) {
+          logger.warn(`    ⚠️ News fetch failed for ${holding.symbol}:`, error.message);
+          news = [];
+        }
 
         // Generate AI insights
-        const aiInsight = await AIInsightsService.generateStockInsight(
-          holding,
-          technicalData,
-          news
-        );
+        let aiInsight;
+        try {
+          aiInsight = await AIInsightsService.generateStockInsight(
+            holding,
+            technicalData,
+            news
+          );
+          logger.info(`    ✅ AI insight generated`);
+        } catch (error) {
+          logger.warn(`    ⚠️ AI insight generation failed:`, error.message);
+          aiInsight = AIInsightsService.getFallbackInsight(holding, technicalData);
+        }
 
         analyzedHoldings.push({
           ...holding,
@@ -114,26 +148,38 @@ export class StockInsightsJob {
           aiInsight: aiInsight
         });
 
-        // Small delay to avoid rate limits
-        await this.sleep(1000);
+        // Rate limiting: 2 seconds between stocks to avoid API limits
+        await this.sleep(2000);
+
       } catch (error) {
-        logger.error(`Error analyzing ${holding.symbol}:`, error.message);
+        logger.error(`  ❌ Error analyzing ${holding.symbol}:`, error.message);
         
         // Add holding with basic info even if analysis fails
         analyzedHoldings.push({
           ...holding,
-          technical: { signal: 'HOLD', reason: 'Analysis unavailable' },
+          technical: { 
+            signal: 'HOLD', 
+            reason: 'Technical analysis unavailable',
+            strength: 'NEUTRAL'
+          },
           news: [],
-          aiInsight: `${holding.symbol}: Currently ${holding.pnl >= 0 ? 'in profit' : 'in loss'} at ${holding.pnl_percentage}%. Monitor closely.`
+          aiInsight: `${holding.symbol}: Currently ${holding.pnl >= 0 ? 'in profit' : 'in loss'} at ${holding.pnl_percentage.toFixed(2)}%. Monitor closely.`
         });
       }
     }
 
     // 4. Generate overall portfolio summary
-    const overallSummary = await AIInsightsService.generatePortfolioSummary(
-      analyzedHoldings,
-      marketSentiment
-    );
+    logger.info('  📋 Generating portfolio summary...');
+    let overallSummary;
+    try {
+      overallSummary = await AIInsightsService.generatePortfolioSummary(
+        analyzedHoldings,
+        marketSentiment
+      );
+    } catch (error) {
+      logger.warn('Portfolio summary generation failed:', error.message);
+      overallSummary = AIInsightsService.getFallbackPortfolioSummary(analyzedHoldings);
+    }
 
     // 5. Prepare insights object
     const insights = {
@@ -142,31 +188,37 @@ export class StockInsightsJob {
       holdings: analyzedHoldings,
       analysis: {
         totalHoldings: analyzedHoldings.length,
-        totalPnL: analyzedHoldings.reduce((sum, h) => sum + h.pnl, 0),
-        avgPnLPercent: analyzedHoldings.reduce((sum, h) => sum + h.pnl_percentage, 0) / analyzedHoldings.length,
-        gainers: analyzedHoldings.filter(h => h.pnl > 0).length,
-        losers: analyzedHoldings.filter(h => h.pnl < 0).length
+        totalPnL: analyzedHoldings.reduce((sum, h) => sum + (Number(h.pnl) || 0), 0),
+        avgPnLPercent: analyzedHoldings.reduce((sum, h) => sum + (Number(h.pnl_percentage) || 0), 0) / analyzedHoldings.length,
+        gainers: analyzedHoldings.filter(h => Number(h.pnl) > 0).length,
+        losers: analyzedHoldings.filter(h => Number(h.pnl) < 0).length
       },
       overallSummary,
-      marketSentiment: marketSentiment.summary
+      marketSentiment: marketSentiment?.summary || 'Market data unavailable'
     };
 
     // 6. Send email
-    await EmailService.sendInsightsEmail(userEmail, insights);
+    logger.info('  📧 Sending email...');
+    try {
+      await EmailService.sendInsightsEmail(userEmail, insights);
+      logger.info(`  ✅ Email sent to ${userEmail}`);
+    } catch (error) {
+      logger.error(`  ❌ Failed to send email to ${userEmail}:`, error.message);
+    }
 
-    logger.info(`✅ Insights sent to ${userEmail}`);
+    logger.info(`✅ Insights completed for ${userEmail}`);
   }
 
   /**
    * Get user's holdings from database
    */
-  
   static async getUserHoldings(userEmail) {
     try {
       const [holdings] = await db.query(`
         SELECT 
           symbol,
           broker,
+          holding_type,
           quantity,
           average_price,
           current_price,

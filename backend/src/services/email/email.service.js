@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import MarkdownIt from "markdown-it";
+import axios from "axios";
 import { logger } from "../../utils/logger.js";
 
 export class EmailService {
@@ -13,6 +14,27 @@ export class EmailService {
   });
 
   /**
+   * Fetch current price from external API
+   */
+  static async getCurrentPrice(symbol) {
+    try {
+      logger.info(`Fetching current price for ${symbol} from API`);
+      
+      const response = await axios.get(`http://localhost:5500/current?symbol=${symbol}.NS`);
+      
+      if (response.data && response.data.current_price) {
+        return response.data.current_price;
+      }
+      
+      logger.warn(`No current price returned for ${symbol}`);
+      return null;
+    } catch (error) {
+      logger.error(`Error fetching current price for ${symbol}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Convert Markdown → Email-Safe HTML
    */
   static renderEmailMarkdown(mdText = "") {
@@ -20,33 +42,39 @@ export class EmailService {
 
     let html = this.md.render(mdText || "");
 
-    // Convert <ul><li> → email-safe table bullets
-    html = html.replace(/<ul>/g, '<table style="margin:8px 0;"><tbody>');
-    html = html.replace(/<\/ul>/g, "</tbody></table>");
+    // Convert <ul><li> → email-safe bullets
+    html = html.replace(/<ul>/g, '<div style="margin:8px 0;">');
+    html = html.replace(/<\/ul>/g, "</div>");
     html = html.replace(
       /<li>/g,
-      '<tr><td style="font-size:15px;line-height:1.6;padding:4px 0;">• '
+      '<div style="font-size:14px;line-height:1.6;padding:4px 0;margin-left:15px;">• '
     );
-    html = html.replace(/<\/li>/g, "</td></tr>");
+    html = html.replace(/<\/li>/g, "</div>");
 
     // Headings → styled divs
     html = html.replace(
       /<h1>(.*?)<\/h1>/g,
-      '<div style="font-size:22px;font-weight:bold;margin:15px 0 10px;">$1</div>'
+      '<div style="font-size:20px;font-weight:bold;margin:15px 0 10px;color:#2c3e50;">$1</div>'
     );
     html = html.replace(
       /<h2>(.*?)<\/h2>/g,
-      '<div style="font-size:20px;font-weight:bold;margin:12px 0 8px;">$1</div>'
+      '<div style="font-size:18px;font-weight:bold;margin:12px 0 8px;color:#2c3e50;">$1</div>'
     );
     html = html.replace(
       /<h3>(.*?)<\/h3>/g,
-      '<div style="font-size:18px;font-weight:bold;margin:10px 0 6px;">$1</div>'
+      '<div style="font-size:16px;font-weight:bold;margin:10px 0 6px;color:#2c3e50;">$1</div>'
     );
 
     // Paragraphs
     html = html.replace(
       /<p>/g,
-      '<p style="font-size:15px;line-height:1.6;margin:8px 0;">'
+      '<p style="font-size:14px;line-height:1.6;margin:8px 0;color:#555;">'
+    );
+
+    // Links
+    html = html.replace(
+      /<a href=/g,
+      '<a style="color:#3498db;text-decoration:none;" href='
     );
 
     return html;
@@ -83,19 +111,49 @@ export class EmailService {
   }
 
   /**
-   * Send stock insights email
+   * Send stock insights email with real-time prices
    */
   static async sendInsightsEmail(userEmail, insights) {
     if (!this.transporter) {
       this.initialize();
     }
 
-    const htmlContent = this.generateInsightsHTML(insights);
+    // Update current prices for all holdings before generating email
+    const updatedHoldings = await Promise.all(
+      insights.holdings.map(async (holding) => {
+        const currentPrice = await this.getCurrentPrice(holding.symbol);
+        
+        if (currentPrice) {
+          // Recalculate PnL with updated price
+          const avgPrice = this.safeNumber(holding.average_price);
+          const quantity = this.safeNumber(holding.quantity);
+          const updatedPnl = (currentPrice - avgPrice) * quantity;
+          const updatedPnlPercentage = ((currentPrice - avgPrice) / avgPrice) * 100;
+
+          return {
+            ...holding,
+            current_price: currentPrice,
+            pnl: updatedPnl,
+            pnl_percentage: updatedPnlPercentage
+          };
+        }
+        
+        return holding;
+      })
+    );
+
+    // Update insights with refreshed holdings
+    const updatedInsights = {
+      ...insights,
+      holdings: updatedHoldings
+    };
+
+    const htmlContent = this.generateInsightsHTML(updatedInsights);
 
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: userEmail,
-      subject: `📊 Your Daily Stock Insights - ${new Date().toLocaleDateString()}`,
+      subject: `📊 Your Daily Stock Insights - ${new Date().toLocaleDateString('en-IN')}`,
       html: htmlContent,
     };
 
@@ -110,7 +168,7 @@ export class EmailService {
   }
 
   /**
-   * Generate Beginner-Friendly Email Template
+   * Generate Fixed Email Template
    */
   static generateInsightsHTML(insights) {
     const { date, holdings, overallSummary, analysis } = insights;
@@ -125,15 +183,15 @@ export class EmailService {
     // Portfolio status message
     let portfolioStatus = "";
     if (totalHoldings === 1) {
-      portfolioStatus = `Your portfolio has only one stock (${holdings[0].symbol}). Because of this, any small change in ${holdings[0].symbol} affects the whole portfolio.`;
+      portfolioStatus = `Your portfolio has only one stock (${holdings[0].symbol}). Any small change in ${holdings[0].symbol} affects your entire portfolio.`;
     } else if (avgPnLPercent > 0) {
       portfolioStatus = `Your portfolio is performing well with an average gain of ${avgPnLPercent.toFixed(2)}%. ${gainers} ${gainers === 1 ? 'stock is' : 'stocks are'} in profit and ${losers} ${losers === 1 ? 'is' : 'are'} in loss.`;
     } else {
       portfolioStatus = `Your portfolio is showing an average loss of ${Math.abs(avgPnLPercent).toFixed(2)}%. ${losers} ${losers === 1 ? 'stock is' : 'stocks are'} in loss and ${gainers} ${gainers === 1 ? 'is' : 'are'} in profit.`;
     }
 
-    // Generate individual stock sections
-    let stockSectionsHTML = holdings
+    // Generate individual stock sections - FIXED VERSION
+    const stockSectionsHTML = holdings
       .map((holding) => {
         const avgPrice = this.safeNumber(holding.average_price);
         const currentPrice = this.safeNumber(holding.current_price);
@@ -141,31 +199,85 @@ export class EmailService {
         const pnlPercentage = this.safeNumber(holding.pnl_percentage);
         const quantity = this.safeNumber(holding.quantity);
         const rsi = holding.technical?.rsi;
+        const sma20 = holding.technical?.sma20;
+        const sma50 = holding.technical?.sma50;
+        const signal = holding.technical?.signal || 'HOLD';
+        const strength = holding.technical?.strength || 'NEUTRAL';
+        const macd = holding.technical?.macd;
+        const additionalInfo = holding.technical?.additionalInfo || [];
 
         // Performance message
         let performanceMsg = "";
         if (Math.abs(pnlPercentage) < 1) {
-          performanceMsg = `${holding.symbol} is ${pnlPercentage >= 0 ? 'slightly up' : 'slightly down'} by ${Math.abs(pnlPercentage).toFixed(2)}%, but this is a very small movement and not something to worry about.`;
+          performanceMsg = `${holding.symbol} is ${pnlPercentage >= 0 ? 'slightly up' : 'slightly down'} by ${Math.abs(pnlPercentage).toFixed(2)}%, a very small movement.`;
         } else if (pnlPercentage > 0) {
-          performanceMsg = `${holding.symbol} is performing well, up by ${pnlPercentage.toFixed(2)}%. This is a positive sign.`;
+          performanceMsg = `${holding.symbol} is performing well, up by ${pnlPercentage.toFixed(2)}%. This is positive.`;
         } else {
           performanceMsg = `${holding.symbol} is down by ${Math.abs(pnlPercentage).toFixed(2)}%. ${Math.abs(pnlPercentage) > 5 ? 'This needs attention.' : 'This is a normal market movement.'}`;
         }
 
         // Technical explanation
         let technicalMsg = "";
+        
         if (rsi) {
           if (rsi > 70) {
-            technicalMsg = `The stock's RSI is ${rsi.toFixed(0)}, which means it may be "overbought" - price has risen a lot recently and could fall.`;
+            technicalMsg = `RSI is ${rsi.toFixed(0)} (overbought) - price has risen significantly and may correct soon.`;
           } else if (rsi < 30) {
-            technicalMsg = `The stock's RSI is ${rsi.toFixed(0)}, which means it may be "oversold" - price has fallen a lot and could bounce back.`;
+            technicalMsg = `RSI is ${rsi.toFixed(0)} (oversold) - price has fallen significantly and may bounce back.`;
           } else if (rsi >= 60) {
-            technicalMsg = `The stock's RSI is ${rsi.toFixed(0)}, which means the price has been rising recently but is not in a danger zone.`;
+            technicalMsg = `RSI is ${rsi.toFixed(0)} - price rising but not at extreme levels.`;
           } else if (rsi <= 40) {
-            technicalMsg = `The stock's RSI is ${rsi.toFixed(0)}, which means the price has been falling but may stabilize soon.`;
+            technicalMsg = `RSI is ${rsi.toFixed(0)} - price falling but may stabilize.`;
           } else {
-            technicalMsg = `The stock's RSI is ${rsi.toFixed(0)}, which is in a neutral zone - no extreme movements expected.`;
+            technicalMsg = `RSI is ${rsi.toFixed(0)} (neutral zone) - no extreme movements expected.`;
           }
+
+          // Add moving average context
+          if (sma20 && sma50) {
+            if (currentPrice > sma20 && sma20 > sma50) {
+              technicalMsg += ` Price is above 20-day (₹${sma20.toFixed(2)}) and 50-day (₹${sma50.toFixed(2)}) averages (bullish).`;
+            } else if (currentPrice < sma20 && sma20 < sma50) {
+              technicalMsg += ` Price is below 20-day (₹${sma20.toFixed(2)}) and 50-day (₹${sma50.toFixed(2)}) averages (bearish).`;
+            }
+          }
+        }
+
+        // Technical indicators - SIMPLIFIED
+        let technicalDetails = "";
+        if (rsi || sma20 || macd) {
+          technicalDetails = `
+            <div style="margin-top:10px;font-size:13px;color:#555;">
+              ${rsi ? `<div style="padding:3px 0;"><strong>RSI:</strong> ${rsi.toFixed(2)} <span style="padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;background:${
+                rsi > 70 ? '#fee2e2;color:#991b1b' : 
+                rsi < 30 ? '#d1fae5;color:#065f46' : 
+                '#f3f4f6;color:#374151'
+              };">${rsi > 70 ? 'OVERBOUGHT' : rsi < 30 ? 'OVERSOLD' : 'NEUTRAL'}</span></div>` : ''}
+              ${sma20 ? `<div style="padding:3px 0;"><strong>SMA 20:</strong> ₹${sma20.toFixed(2)}</div>` : ''}
+              ${sma50 ? `<div style="padding:3px 0;"><strong>SMA 50:</strong> ₹${sma50.toFixed(2)}</div>` : ''}
+              ${macd ? `<div style="padding:3px 0;"><strong>MACD:</strong> ${macd.toFixed(2)}</div>` : ''}
+              <div style="padding:8px 0;">
+                <span style="display:inline-block;padding:6px 12px;border-radius:6px;font-weight:bold;font-size:13px;background:${
+                  signal === 'BUY' ? '#d1fae5;color:#065f46' : 
+                  signal === 'SELL' ? '#fee2e2;color:#991b1b' : 
+                  '#f3f4f6;color:#374151'
+                };">${signal}</span>
+                <span style="margin-left:8px;padding:4px 8px;background:#f8f9fa;border-radius:4px;font-size:11px;color:#6b7280;">${strength}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        // Additional insights
+        let additionalInsightsHTML = "";
+        if (additionalInfo && additionalInfo.length > 0) {
+          additionalInsightsHTML = `
+            <div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:6px;border-left:3px solid #3b82f6;">
+              <div style="font-size:13px;font-weight:bold;color:#1e40af;margin-bottom:6px;">📌 Key Points:</div>
+              ${additionalInfo.slice(0, 3).map(info => `
+                <div style="font-size:12px;color:#475569;padding:3px 0;">• ${info}</div>
+              `).join('')}
+            </div>
+          `;
         }
 
         // News section
@@ -173,77 +285,66 @@ export class EmailService {
         if (holding.news && holding.news.length > 0) {
           const topNews = holding.news.slice(0, 3);
           newsHTML = topNews
-            .map(
-              (n) =>
-                `<tr><td style="padding:6px 0;font-size:14px;line-height:1.5;">• <a href="${n.url}" style="color:#3498db;text-decoration:none;">${n.title}</a></td></tr>`
-            )
+            .map(n => `<div style="padding:6px 0;font-size:14px;line-height:1.5;">• <a href="${n.url}" style="color:#3498db;text-decoration:none;">${n.title}</a></div>`)
             .join("");
         } else {
-          newsHTML = `<tr><td style="padding:6px 0;font-size:14px;color:#777;">No recent news available for ${holding.symbol}</td></tr>`;
+          newsHTML = `<div style="padding:6px 0;font-size:14px;color:#777;">No recent news available</div>`;
         }
 
         return `
-          <tr>
-            <td style="padding:20px;background:#ffffff;border-radius:12px;border:1px solid #e0e0e0;">
-              
-              <!-- Stock Header -->
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="font-size:22px;font-weight:bold;color:#2c3e50;">
-                    ${holding.symbol}
-                  </td>
-                  <td align="right" style="font-size:18px;font-weight:bold;color:${pnl >= 0 ? "#27ae60" : "#e74c3c"};">
-                    ${pnl >= 0 ? "📈" : "📉"} ${pnlPercentage >= 0 ? '+' : ''}${pnlPercentage.toFixed(2)}%
-                  </td>
-                </tr>
-              </table>
-
-              <div style="margin-top:12px;padding:12px;background:#f8f9fa;border-radius:8px;border-left:4px solid ${pnl >= 0 ? "#27ae60" : "#e74c3c"};">
-                <div style="font-size:15px;color:#555;line-height:1.6;">${performanceMsg}</div>
+          <div style="margin-bottom:20px;padding:20px;background:#ffffff;border-radius:12px;border:1px solid #e0e0e0;">
+            
+            <!-- Stock Header -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <div style="font-size:22px;font-weight:bold;color:#2c3e50;">
+                ${holding.symbol}
+                <span style="font-size:12px;padding:4px 8px;background:#f1f5f9;color:#64748b;border-radius:4px;margin-left:8px;font-weight:600;">${holding.broker.toUpperCase()}</span>
+                ${holding.holding_type === 'POSITION' ? `<span style="font-size:12px;padding:4px 8px;background:#fed7aa;color:#c2410c;border-radius:4px;margin-left:4px;font-weight:600;">⚡ POSITION</span>` : ''}
               </div>
-
-              <!-- Basic Details -->
-              <div style="margin-top:15px;">
-                <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:8px;">📊 Your Position</div>
-                <table style="width:100%;font-size:14px;color:#555;">
-                  <tr>
-                    <td style="padding:4px 0;">• You bought <strong>${quantity} shares</strong> at ₹${avgPrice.toFixed(2)} each</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:4px 0;">• Current price is <strong>₹${currentPrice.toFixed(2)}</strong></td>
-                  </tr>
-                  <tr>
-                    <td style="padding:4px 0;">• Your total ${pnl >= 0 ? 'profit' : 'loss'} is <strong style="color:${pnl >= 0 ? "#27ae60" : "#e74c3c"};">₹${Math.abs(pnl).toFixed(2)}</strong></td>
-                  </tr>
-                </table>
+              <div style="font-size:18px;font-weight:bold;color:${pnl >= 0 ? "#27ae60" : "#e74c3c"};">
+                ${pnl >= 0 ? "📈" : "📉"} ${pnlPercentage >= 0 ? '+' : ''}${pnlPercentage.toFixed(2)}%
               </div>
+            </div>
 
-              ${technicalMsg ? `
-              <div style="margin-top:15px;padding:12px;background:#e8f4f8;border-radius:8px;">
-                <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:6px;">📈 Technical Signal</div>
-                <div style="font-size:14px;color:#555;line-height:1.6;">${technicalMsg}</div>
+            <div style="margin-top:12px;padding:12px;background:#f8f9fa;border-radius:8px;border-left:4px solid ${pnl >= 0 ? "#27ae60" : "#e74c3c"};">
+              <div style="font-size:15px;color:#555;line-height:1.6;">${performanceMsg}</div>
+            </div>
+
+            <!-- Basic Details -->
+            <div style="margin-top:15px;">
+              <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:8px;">📊 Your Position</div>
+              <div style="font-size:14px;color:#555;line-height:1.8;">
+                <div>• You own <strong>${quantity} shares</strong> at avg price ₹${avgPrice.toFixed(2)}</div>
+                <div>• Current price: <strong>₹${currentPrice.toFixed(2)}</strong></div>
+                <div>• Your ${pnl >= 0 ? 'profit' : 'loss'}: <strong style="color:${pnl >= 0 ? "#27ae60" : "#e74c3c"};">₹${Math.abs(pnl).toFixed(2)}</strong></div>
               </div>
-              ` : ''}
+            </div>
 
-              <!-- News Section -->
-              <div style="margin-top:15px;">
-                <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:8px;">📰 Latest News</div>
-                <table style="width:100%;">
-                  ${newsHTML}
-                </table>
+            <!-- Technical Section -->
+            ${technicalMsg || rsi ? `
+            <div style="margin-top:15px;padding:12px;background:#e8f4f8;border-radius:8px;">
+              <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:8px;">📈 Technical Analysis</div>
+              ${technicalMsg ? `<div style="font-size:14px;color:#555;line-height:1.6;margin-bottom:8px;">${technicalMsg}</div>` : ''}
+              ${technicalDetails}
+              ${additionalInsightsHTML}
+            </div>
+            ` : ''}
+
+            <!-- News Section -->
+            <div style="margin-top:15px;">
+              <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:8px;">📰 Latest News</div>
+              ${newsHTML}
+            </div>
+
+            <!-- AI Insights -->
+            <div style="margin-top:15px;padding:12px;background:#f0f9ff;border-radius:8px;border-left:4px solid #3498db;">
+              <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:8px;">🤖 AI Analysis</div>
+              <div style="font-size:14px;color:#555;line-height:1.7;">
+                ${this.renderEmailMarkdown(holding.aiInsight)}
               </div>
+            </div>
 
-              <!-- AI Insights -->
-              <div style="margin-top:15px;padding:12px;background:#f0f9ff;border-radius:8px;border-left:4px solid #3498db;">
-                <div style="font-size:16px;font-weight:bold;color:#34495e;margin-bottom:8px;">🤖 What AI Says (Simple Version)</div>
-                <div style="font-size:14px;color:#555;line-height:1.7;">
-                  ${this.renderEmailMarkdown(holding.aiInsight)}
-                </div>
-              </div>
-
-            </td>
-          </tr>
-          <tr><td style="height:20px;"></td></tr>
+          </div>
         `;
       })
       .join("");
@@ -251,103 +352,83 @@ export class EmailService {
     return `
     <!DOCTYPE html>
     <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
     <body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
 
-      <table width="100%" cellpadding="0" cellspacing="0" style="padding:20px 0;">
-        <tr><td align="center">
+      <div style="max-width:650px;margin:20px auto;background:#ffffff;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
 
-          <table width="650" style="background:#ffffff;border-radius:16px;padding:0;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+        <!-- Header -->
+        <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;font-size:28px;font-weight:bold;padding:30px;border-radius:16px 16px 0 0;text-align:center;">
+          📊 Daily Stock Insights
+        </div>
 
-            <!-- Header -->
-            <tr>
-              <td style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;font-size:28px;font-weight:bold;padding:30px;border-radius:16px 16px 0 0;text-align:center;">
-                📊 Daily Stock Insights
-              </td>
-            </tr>
+        <div style="padding:20px 30px 10px 30px;">
+          <div style="color:#777;font-size:14px;">
+            Generated: ${new Date(date).toLocaleString('en-IN', { 
+              day: 'numeric', 
+              month: 'short', 
+              year: 'numeric', 
+              hour: 'numeric', 
+              minute: 'numeric', 
+              hour12: true 
+            })}
+          </div>
+        </div>
 
-            <tr>
-              <td style="padding:20px 30px 10px 30px;">
-                <div style="color:#777;font-size:14px;">
-                  Generated on: ${new Date(date).toLocaleString('en-IN', { 
-                    day: 'numeric', 
-                    month: 'numeric', 
-                    year: 'numeric', 
-                    hour: 'numeric', 
-                    minute: 'numeric', 
-                    hour12: true 
-                  })}
-                </div>
-              </td>
-            </tr>
+        <!-- Overall Summary -->
+        <div style="padding:10px 30px 20px 30px;">
+          <div style="background:#f8f9fa;padding:20px;border-radius:12px;border-left:5px solid #667eea;">
+            <div style="font-size:18px;font-weight:bold;color:#2c3e50;margin-bottom:10px;">💡 Portfolio Summary</div>
+            <div style="font-size:15px;color:#555;line-height:1.7;">
+              ${portfolioStatus}
+              ${totalPnL !== 0 ? ` Today, your total ${totalPnL >= 0 ? 'profit' : 'loss'} is ₹${Math.abs(totalPnL).toFixed(2)}.` : ''}
+            </div>
+          </div>
+        </div>
 
-            <!-- Overall Summary -->
-            <tr>
-              <td style="padding:10px 30px 20px 30px;">
-                <div style="background:#f8f9fa;padding:20px;border-radius:12px;border-left:5px solid #667eea;">
-                  <div style="font-size:18px;font-weight:bold;color:#2c3e50;margin-bottom:10px;">💡 Summary</div>
-                  <div style="font-size:15px;color:#555;line-height:1.7;">
-                    ${portfolioStatus}
-                    ${totalPnL !== 0 ? ` Today, your total ${totalPnL >= 0 ? 'profit' : 'loss'} is ₹${Math.abs(totalPnL).toFixed(2)}.` : ''}
-                  </div>
-                </div>
-              </td>
-            </tr>
+        <!-- Stock Details -->
+        <div style="padding:0 30px 20px 30px;">
+          ${stockSectionsHTML}
+        </div>
 
-            <!-- Stock Details -->
-            <tr>
-              <td style="padding:0 30px 20px 30px;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  ${stockSectionsHTML}
-                </table>
-              </td>
-            </tr>
+        <!-- Overall Market Context -->
+        <div style="padding:0 30px 20px 30px;">
+          <div style="background:#fff9e6;padding:20px;border-radius:12px;border-left:5px solid #f39c12;">
+            <div style="font-size:18px;font-weight:bold;color:#2c3e50;margin-bottom:10px;">🌍 Market Context</div>
+            <div style="font-size:14px;color:#555;line-height:1.7;">
+              ${this.renderEmailMarkdown(overallSummary)}
+            </div>
+          </div>
+        </div>
 
-            <!-- Overall Market Context -->
-            <tr>
-              <td style="padding:0 30px 20px 30px;">
-                <div style="background:#fff9e6;padding:20px;border-radius:12px;border-left:5px solid #f39c12;">
-                  <div style="font-size:18px;font-weight:bold;color:#2c3e50;margin-bottom:10px;">🌍 Market Context</div>
-                  <div style="font-size:14px;color:#555;line-height:1.7;">
-                    ${this.renderEmailMarkdown(overallSummary)}
-                  </div>
-                </div>
-              </td>
-            </tr>
+        <!-- Recommendation -->
+        <div style="padding:0 30px 20px 30px;">
+          <div style="background:#e8f5e9;padding:20px;border-radius:12px;border-left:5px solid #27ae60;">
+            <div style="font-size:18px;font-weight:bold;color:#2c3e50;margin-bottom:10px;">🧭 Recommendation</div>
+            <div style="font-size:14px;color:#555;line-height:1.7;">
+              ${this.generateRecommendation(holdings, analysis)}
+            </div>
+          </div>
+        </div>
 
-            <!-- Recommendation -->
-            <tr>
-              <td style="padding:0 30px 20px 30px;">
-                <div style="background:#e8f5e9;padding:20px;border-radius:12px;border-left:5px solid #27ae60;">
-                  <div style="font-size:18px;font-weight:bold;color:#2c3e50;margin-bottom:10px;">🧭 Recommendation</div>
-                  <div style="font-size:14px;color:#555;line-height:1.7;">
-                    ${this.generateRecommendation(holdings, analysis)}
-                  </div>
-                </div>
-              </td>
-            </tr>
+        <!-- Disclaimer -->
+        <div style="padding:0 30px 30px 30px;">
+          <div style="background:#fff3cd;color:#856404;padding:15px;border-radius:8px;font-size:13px;line-height:1.5;">
+            ⚠️ <strong>Disclaimer:</strong> This analysis is for informational purposes only. Please consult a certified financial advisor before making investment decisions.
+          </div>
+        </div>
 
-            <!-- Disclaimer -->
-            <tr>
-              <td style="padding:0 30px 30px 30px;">
-                <div style="background:#fff3cd;color:#856404;padding:15px;border-radius:8px;font-size:13px;line-height:1.5;">
-                  ⚠️ <strong>Disclaimer:</strong> This analysis is for informational purposes only and should not be considered as financial advice. Please consult with a certified financial advisor before making investment decisions.
-                </div>
-              </td>
-            </tr>
+        <!-- Footer -->
+        <div style="padding:0 30px 30px 30px;">
+          <div style="font-size:12px;color:#999;text-align:center;border-top:1px solid #e0e0e0;padding-top:20px;">
+            Powered by AI Trading Platform
+          </div>
+        </div>
 
-            <!-- Footer -->
-            <tr>
-              <td style="padding:0 30px 30px 30px;">
-                <div style="font-size:12px;color:#999;text-align:center;border-top:1px solid #e0e0e0;padding-top:20px;">
-                  Powered by AI Trading Platform | <a href="#" style="color:#667eea;text-decoration:none;">Manage Preferences</a>
-                </div>
-              </td>
-            </tr>
-
-          </table>
-
-        </td></tr>
-      </table>
+      </div>
 
     </body>
     </html>
@@ -360,36 +441,55 @@ export class EmailService {
   static generateRecommendation(holdings, analysis) {
     const totalHoldings = holdings.length;
     const avgPnLPercent = this.safeNumber(analysis?.avgPnLPercent || 0);
+    
+    // Separate holdings and positions
+    const longTermHoldings = holdings.filter(h => h.holding_type === 'HOLDING');
+    const activePositions = holdings.filter(h => h.holding_type === 'POSITION');
 
-    if (totalHoldings === 1) {
-      const holding = holdings[0];
-      const pnlPercent = this.safeNumber(holding.pnl_percentage);
-      
-      if (Math.abs(pnlPercent) < 2) {
-        return `You don't need to take action right now. But in the future, consider adding more stocks to reduce risk. Having only one stock means your portfolio is highly dependent on that single company's performance.`;
-      } else if (pnlPercent > 5) {
-        return `Your stock is performing well! However, consider diversifying by adding 2-3 more stocks to reduce concentration risk. Don't put all your eggs in one basket.`;
-      } else if (pnlPercent < -5) {
-        return `Your stock is showing losses. Consider reviewing why you invested and whether the fundamentals have changed. Also, think about diversifying with other stocks to spread risk.`;
-      }
-    } else if (totalHoldings <= 3) {
-      if (avgPnLPercent > 3) {
-        return `Your portfolio is doing well! Keep monitoring your positions and consider adding 1-2 more quality stocks for better diversification.`;
-      } else if (avgPnLPercent < -3) {
-        return `Your portfolio is showing overall losses. Review each position individually and consider whether to hold, average down, or exit. Stick to your investment thesis.`;
-      } else {
-        return `Your portfolio is stable. No immediate action needed. Continue monitoring and consider gradually building a more diversified portfolio of 5-7 stocks.`;
-      }
-    } else {
-      if (avgPnLPercent > 5) {
-        return `Excellent portfolio performance! Consider booking partial profits in stocks that have gained significantly (>15%) and rebalancing your portfolio.`;
-      } else if (avgPnLPercent < -5) {
-        return `Your portfolio needs attention. Review loss-making positions - cut losses on stocks where fundamentals have deteriorated, but hold quality stocks going through temporary weakness.`;
-      } else {
-        return `Your portfolio is well-diversified and stable. Continue your current strategy and keep monitoring positions regularly. Stay invested for the long term.`;
+    let recommendation = "";
+
+    // Position-specific advice
+    if (activePositions.length > 0) {
+      const positionPnL = activePositions.reduce((sum, p) => sum + this.safeNumber(p.pnl), 0);
+      if (positionPnL < -500) {
+        recommendation += `⚠️ <strong>Active Positions Alert:</strong> Your ${activePositions.length} position${activePositions.length > 1 ? 's' : ''} showing loss of ₹${Math.abs(positionPnL).toFixed(2)}. Review stop-losses. `;
+      } else if (positionPnL > 500) {
+        recommendation += `✅ <strong>Positions Update:</strong> Your positions show profit of ₹${positionPnL.toFixed(2)}. Consider booking partial profits. `;
       }
     }
 
-    return `Keep monitoring your positions and stay informed about market developments. Invest regularly and think long-term.`;
+    // Holdings-specific advice
+    if (longTermHoldings.length === 1) {
+      const holding = longTermHoldings[0];
+      const pnlPercent = this.safeNumber(holding.pnl_percentage);
+      
+      if (Math.abs(pnlPercent) < 2) {
+        recommendation += `No immediate action needed. Consider adding more stocks to reduce risk. Having only one long-term holding means high concentration risk.`;
+      } else if (pnlPercent > 5) {
+        recommendation += `Your stock is performing well! Consider diversifying with 2-3 more quality stocks to reduce concentration risk.`;
+      } else if (pnlPercent < -5) {
+        recommendation += `Review your investment thesis. Consider diversifying with other quality stocks to spread risk.`;
+      }
+    } else if (longTermHoldings.length <= 3) {
+      const holdingsPnL = longTermHoldings.reduce((sum, h) => sum + this.safeNumber(h.pnl_percentage), 0) / longTermHoldings.length;
+      
+      if (holdingsPnL > 3) {
+        recommendation += `Portfolio performing well! Consider adding 1-2 more quality stocks for better diversification.`;
+      } else if (holdingsPnL < -3) {
+        recommendation += `Review each position individually. Quality stocks can recover - stick to your investment thesis.`;
+      } else {
+        recommendation += `Portfolio stable. Gradually build to 5-7 stocks for optimal diversification.`;
+      }
+    } else {
+      if (avgPnLPercent > 5) {
+        recommendation += `Excellent performance! Consider booking partial profits in stocks with >15% gains and rebalancing.`;
+      } else if (avgPnLPercent < -5) {
+        recommendation += `Portfolio needs attention. Review loss-makers - cut losses where fundamentals deteriorated, hold quality stocks facing temporary weakness.`;
+      } else {
+        recommendation += `Well-diversified and stable. Continue monitoring regularly and stay invested long-term.`;
+      }
+    }
+
+    return recommendation || `Monitor your positions regularly and stay informed. Invest consistently and think long-term.`;
   }
 }

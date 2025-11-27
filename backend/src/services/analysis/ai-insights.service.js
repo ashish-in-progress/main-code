@@ -1,9 +1,31 @@
 import { AzureChatOpenAI } from '@langchain/openai';
+import axios from 'axios';
 import { logger } from '../../utils/logger.js';
 import { AZURE_CONFIG_KITE } from '../../config/constants.js';
 
 export class AIInsightsService {
   static model = null;
+
+  /**
+   * Fetch current price from external API
+   */
+  static async getCurrentPrice(symbol) {
+    try {
+      logger.info(`Fetching current price for ${symbol} from API`);
+      
+      const response = await axios.get(`http://localhost:5500/current?symbol=${symbol}.NS`);
+      
+      if (response.data && response.data.current_price) {
+        return response.data.current_price;
+      }
+      
+      logger.warn(`No current price returned for ${symbol}`);
+      return null;
+    } catch (error) {
+      logger.error(`Error fetching current price for ${symbol}:`, error.message);
+      return null;
+    }
+  }
 
   /**
    * Initialize Azure OpenAI model
@@ -28,7 +50,7 @@ export class AIInsightsService {
   }
 
   /**
-   * Generate insights for a single stock
+   * Generate insights for a single stock with real-time price
    */
   static async generateStockInsight(holding, technicalData, newsArticles) {
     if (!this.model) {
@@ -36,6 +58,28 @@ export class AIInsightsService {
     }
 
     try {
+      // Fetch current price
+      const currentPrice = await this.getCurrentPrice(holding.symbol);
+      
+      // Update holding with current price if fetched successfully
+      if (currentPrice) {
+        const avgPrice = Number(holding.average_price) || 0;
+        const quantity = Number(holding.quantity) || 0;
+        
+        // Recalculate PnL with updated price
+        const updatedPnl = (currentPrice - avgPrice) * quantity;
+        const updatedPnlPercentage = ((currentPrice - avgPrice) / avgPrice) * 100;
+        
+        holding = {
+          ...holding,
+          current_price: currentPrice,
+          pnl: updatedPnl,
+          pnl_percentage: updatedPnlPercentage
+        };
+        
+        logger.info(`Updated ${holding.symbol} with current price: ₹${currentPrice}`);
+      }
+
       const prompt = this.buildStockAnalysisPrompt(holding, technicalData, newsArticles);
       
       const response = await this.model.invoke(prompt);
@@ -95,7 +139,7 @@ Be specific, actionable, and concise. Focus on what matters most for this positi
   }
 
   /**
-   * Generate overall portfolio summary
+   * Generate overall portfolio summary with real-time prices
    */
   static async generatePortfolioSummary(allHoldings, marketSentiment) {
     if (!this.model) {
@@ -103,29 +147,52 @@ Be specific, actionable, and concise. Focus on what matters most for this positi
     }
 
     try {
+      // Update all holdings with current prices
+      const updatedHoldings = await Promise.all(
+        allHoldings.map(async (holding) => {
+          const currentPrice = await this.getCurrentPrice(holding.symbol);
+          
+          if (currentPrice) {
+            const avgPrice = Number(holding.average_price) || 0;
+            const quantity = Number(holding.quantity) || 0;
+            const updatedPnl = (currentPrice - avgPrice) * quantity;
+            const updatedPnlPercentage = ((currentPrice - avgPrice) / avgPrice) * 100;
+            
+            return {
+              ...holding,
+              current_price: currentPrice,
+              pnl: updatedPnl,
+              pnl_percentage: updatedPnlPercentage
+            };
+          }
+          
+          return holding;
+        })
+      );
+
       // Convert all values to numbers before calculations
-      const totalValue = allHoldings.reduce((sum, h) => {
+      const totalValue = updatedHoldings.reduce((sum, h) => {
         const currentPrice = Number(h.current_price) || 0;
         const quantity = Number(h.quantity) || 0;
         return sum + (currentPrice * quantity);
       }, 0);
 
-      const totalPnL = allHoldings.reduce((sum, h) => {
+      const totalPnL = updatedHoldings.reduce((sum, h) => {
         const pnl = Number(h.pnl) || 0;
         return sum + pnl;
       }, 0);
 
-      const avgPnLPercent = allHoldings.reduce((sum, h) => {
+      const avgPnLPercent = updatedHoldings.reduce((sum, h) => {
         const pnlPercent = Number(h.pnl_percentage) || 0;
         return sum + pnlPercent;
-      }, 0) / allHoldings.length;
+      }, 0) / updatedHoldings.length;
 
-      const topGainers = allHoldings
+      const topGainers = updatedHoldings
         .filter(h => Number(h.pnl) > 0)
         .sort((a, b) => Number(b.pnl_percentage) - Number(a.pnl_percentage))
         .slice(0, 3);
 
-      const topLosers = allHoldings
+      const topLosers = updatedHoldings
         .filter(h => Number(h.pnl) < 0)
         .sort((a, b) => Number(a.pnl_percentage) - Number(b.pnl_percentage))
         .slice(0, 3);
@@ -133,7 +200,7 @@ Be specific, actionable, and concise. Focus on what matters most for this positi
       const prompt = `You are a portfolio manager. Provide a brief overall summary of this portfolio (4-5 sentences).
 
 **Portfolio Overview:**
-- Total Holdings: ${allHoldings.length} stocks
+- Total Holdings: ${updatedHoldings.length} stocks
 - Total Portfolio Value: ₹${totalValue.toFixed(2)}
 - Overall P&L: ₹${totalPnL.toFixed(2)} (${avgPnLPercent.toFixed(2)}%)
 
@@ -156,7 +223,7 @@ Be concise and actionable.`;
 
       const response = await this.model.invoke(prompt);
       
-      logger.info('Generated portfolio summary');
+      logger.info('Generated portfolio summary with updated prices');
       
       return response.content;
     } catch (error) {

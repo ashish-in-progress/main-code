@@ -3,13 +3,34 @@ import { logger } from '../../utils/logger.js';
 
 export class TechnicalService {
   /**
+   * Fetch current price from external API
+   */
+  static async getCurrentPrice(symbol) {
+    try {
+      logger.info(`Fetching current price for ${symbol} from API`);
+      
+      const response = await axios.get(`http://localhost:5500/current?symbol=${symbol}`);
+      
+      if (response.data && response.data.current_price) {
+        return response.data.current_price;
+      }
+      
+      logger.warn(`No current price returned for ${symbol}`);
+      return null;
+    } catch (error) {
+      logger.error(`Error fetching current price for ${symbol}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Fetch stock data from external API with technical indicators
    */
   static async getStockData(symbol) {
     try {
       logger.info(`Fetching technical data for ${symbol} from API`);
       
-      const response = await axios.get(`http://localhost:5500/?stock=${symbol}`);
+      const response = await axios.get(`http://localhost:5500/?stock=${symbol}.NS`);
       
       if (response.data && response.data.status === 'success') {
         return response.data.data;
@@ -26,8 +47,16 @@ export class TechnicalService {
   /**
    * Get comprehensive technical analysis using external API data
    */
-  static async analyzeTechnicals(symbol, broker, currentPrice) {
+  static async analyzeTechnicals(symbol, broker, currentPrice = null) {
     try {
+      // Fetch current price if not provided
+      if (!currentPrice) {
+        currentPrice = await this.getCurrentPrice(symbol);
+        if (!currentPrice) {
+          logger.warn(`Could not fetch current price for ${symbol}`);
+        }
+      }
+
       // Get data from external API (already contains technical indicators)
       const stockData = await this.getStockData(symbol);
       
@@ -61,7 +90,7 @@ export class TechnicalService {
         histogram: stockData.macd_hist
       };
 
-      // Use API's current price if not provided
+      // Use fetched current price, fallback to API's price if still null
       const price = currentPrice || stockData.current_price;
 
       // Generate trading signal
