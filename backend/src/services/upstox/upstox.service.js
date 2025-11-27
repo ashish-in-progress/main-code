@@ -29,6 +29,7 @@ export class UpstoxService {
 
   const client = upstoxClients.get(sessionId);
   const holdingsResult = await client.getHoldings();
+  console.log(holdingsResult)
   
   // Save to database
   const db = (await import('../../config/db.js')).db;

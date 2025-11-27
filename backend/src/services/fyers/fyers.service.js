@@ -52,7 +52,7 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
   // Call holdings tool
   const holdingsResult = await mcpClient.callTool("get_holdings", {});
   const holdingsText = mcpClient.extractTextFromResult(holdingsResult);
-  
+  console.log(holdingsResult);
   // Parse holdings (Fyers returns JSON string)
   let holdingsData;
   try {

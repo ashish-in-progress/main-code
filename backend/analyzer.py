@@ -1135,7 +1135,7 @@ def analyze_stock():
             return jsonify({"error": "top_n must be between 1 and 20"}), 400
         
         # Initialize analyzer
-        api_url = os.getenv("STOCK_API_URL", "http://localhost:5500")
+        api_url = os.getenv("STOCK_API_URL", "http://https://33trpk9t-5500.inc1.devtunnels.ms")
         analyzer = StockAnalyzer(api_url)
         analyzer.pattern_engine = EnhancedPatternEngine(lookback_days=lookback)
         

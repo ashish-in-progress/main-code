@@ -13,7 +13,7 @@ export const sessionConfig = session({
   rolling: true,
   cookie: {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    httpOnly: true,
+    httpOnly: false,
     secure: IN_PROD,   // true when behind HTTPS in production
     sameSite: 'lax',
     path: '/'

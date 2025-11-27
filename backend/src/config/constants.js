@@ -24,7 +24,7 @@ export const AZURE_CONFIG_KITE = {
 export const UPSTOX_CONFIG = {
   apiKey: 'a5d645f8-c31e-4afd-82c7-296ac6b332fd',
   apiSecret: 'mprx3irvh2',
-  redirectUri: 'http://localhost:5000/api/auth/callback',
+  redirectUri: 'https://33trpk9t-5000.inc1.devtunnels.ms/api/auth/callback',
   authUrl: 'https://api.upstox.com/v2/login/authorization/dialog',
   tokenUrl: 'https://api.upstox.com/v2/login/authorization/token',
   baseUrl: 'https://api.upstox.com/v2'

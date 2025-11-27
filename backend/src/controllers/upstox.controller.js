@@ -19,20 +19,20 @@ export class UpstoxController {
   const userEmail = req.session.user?.email;  // 🆕 GET USER EMAIL
 
   if (!code) {
-    return res.redirect('http://localhost:5173?error=authorization_failed');
+    return res.redirect('https://33trpk9t-5173.inc1.devtunnels.ms?error=authorization_failed');
   }
 
   if (!userEmail) {
-    return res.redirect('http://localhost:5173?error=not_logged_in');
+    return res.redirect('https://33trpk9t-5173.inc1.devtunnels.ms?error=not_logged_in');
   }
 
   try {
     await UpstoxService.handleCallback(code, sessionId, req, userEmail);  // 🆕 PASS EMAIL
     setActiveBroker(req, 'upstox');
-    res.redirect('http://localhost:5173?login=success&broker=upstox');
+    res.redirect('https://33trpk9t-5173.inc1.devtunnels.ms?login=success&broker=upstox');
   } catch (error) {
     logger.error('Upstox OAuth error:', error.message);
-    res.redirect('http://localhost:5173?error=token_failed');
+    res.redirect('https://33trpk9t-5173.inc1.devtunnels.ms?error=token_failed');
   }
 }
 
@@ -56,6 +56,7 @@ export class UpstoxController {
     try {
       const result = await UpstoxService.getHoldings(sessionId, req);
       res.json(result);
+      console.log("hi",result)
     } catch (error) {
       res.status(500).json({
         error: error.message,

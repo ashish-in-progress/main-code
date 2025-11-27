@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 
 axios.defaults.withCredentials = true;
-axios.defaults.baseURL = "http://localhost:5000/api";
+axios.defaults.baseURL = "https://33trpk9t-5000.inc1.devtunnels.ms/api";
 
 export default function InsightsPage({ onBack, userEmail: initialEmail }) {
   const [loading, setLoading] = useState(false);

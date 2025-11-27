@@ -13,7 +13,7 @@ export class AIInsightsService {
     try {
       logger.info(`Fetching current price for ${symbol} from API`);
       
-      const response = await axios.get(`http://localhost:5500/current?symbol=${symbol}.NS`);
+      const response = await axios.get(`https://33trpk9t-5500.inc1.devtunnels.ms/current?symbol=${symbol}.NS`);
       
       if (response.data && response.data.current_price) {
         return response.data.current_price;

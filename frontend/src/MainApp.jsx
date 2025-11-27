@@ -6,7 +6,7 @@ import StockAnalyzer from "./StockAnalyzer.jsx";
 import PortfolioHoldings from "./PortfolioHoldings.jsx";
 import InsightsPage from "./InsightsPage.jsx";
 // API Configuration
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "https://33trpk9t-5000.inc1.devtunnels.ms/api";
 
 // Configure axios with credentials
 axios.defaults.withCredentials = true;
@@ -308,7 +308,7 @@ export default function MainApp() {
   // Logout user
   const handleUserLogout = async () => {
     try {
-      await axios.post("http://localhost:5000/logout", {}, { withCredentials: true });
+      await axios.post("https://33trpk9t-5000.inc1.devtunnels.ms/logout", {}, { withCredentials: true });
       window.location.href = "/";
     } catch (error) {
       console.error("User logout error:", error);
