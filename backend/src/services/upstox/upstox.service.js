@@ -107,7 +107,7 @@ static async fetchAndSavePositions(sessionId, userEmail, req) {
         'POSITION',
         position.trading_symbol || position.symbol,
         position.quantity || 0,
-        position.average_price || 0,
+        position.buy_value || 0,
         position.last_price || 0,
         position.last_price || 0,
         position.pnl || 0,

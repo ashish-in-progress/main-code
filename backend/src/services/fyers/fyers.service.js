@@ -116,6 +116,8 @@ static async fetchAndSavePositions(sessionId, userEmail) {
   const positionsResult = await mcpClient.callTool("get_positions", {});
   const positionsText = mcpClient.extractTextFromResult(positionsResult);
   
+  console.log('Raw positions response:', positionsText);
+  
   // Parse positions
   let positionsData;
   try {
@@ -123,6 +125,11 @@ static async fetchAndSavePositions(sessionId, userEmail) {
   } catch (error) {
     logger.error('Failed to parse Fyers positions:', error.message);
     throw new Error('Failed to parse positions data');
+  }
+
+  // Check if response is successful
+  if (positionsData.s !== 'ok' || positionsData.code !== 200) {
+    throw new Error(`Fyers API error: ${positionsData.message || 'Unknown error'}`);
   }
 
   // Save to database
@@ -133,12 +140,21 @@ static async fetchAndSavePositions(sessionId, userEmail) {
     [userEmail, 'fyers', 'POSITION']
   );
 
-  const positions = positionsData.netPositions || positionsData.positions || [];
+  // Get positions from netPositions array
+  const positions = positionsData.netPositions || [];
+  
+  console.log(`Processing ${positions.length} positions for ${userEmail}`);
   
   for (const position of positions) {
+    // Skip positions with zero quantity
     if (!position.netQty || position.netQty === 0) {
       continue;
     }
+
+    // Calculate P&L percentage
+    const pnlPercentage = position.netAvg !== 0 
+      ? ((position.ltp - position.netAvg) / position.netAvg) * 100 
+      : 0;
 
     await db.query(
       `INSERT INTO User_Holdings 
@@ -149,16 +165,16 @@ static async fetchAndSavePositions(sessionId, userEmail) {
         userEmail,
         'fyers',
         'POSITION',
-        position.symbol || position.tradingsymbol,
-        position.netQty || 0,
-        position.buyAvg || position.avgPrice || 0,
-        position.ltp || 0,
-        position.ltp || 0,
-        position.pl || position.realizedProfit || 0,
-        position.plPerc || 0,
-        position.productType || 'INTRADAY',
-        position.exchange || 'NSE',
-        '',
+        position.symbol,                    // NSE:IDEA-EQ
+        position.netQty,                    // 2
+        position.netAvg,                    // 10.04
+        position.ltp,                       // 10.03
+        position.ltp,                       // 10.03
+        position.pl,                        // -0.02
+        pnlPercentage,                      // Calculated
+        position.productType,               // CNC
+        position.exchange === 10 ? 'NSE' : 'BSE', // Convert exchange code
+        '',                                 // ISIN not provided
         JSON.stringify(position)
       ]
     );
@@ -169,7 +185,8 @@ static async fetchAndSavePositions(sessionId, userEmail) {
   return {
     success: true,
     count: positions.length,
-    positions
+    positions,
+    overall: positionsData.overall
   };
 }
   static async verifyAuth(sessionId, userEmail) {  // ADD userEmail parameter
