@@ -51,14 +51,21 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
   
   // Call holdings tool
   const holdingsResult = await mcpClient.callTool("get_holdings", {});
-  const holdingsText = mcpClient.extractTextFromResult(holdingsResult);
-  console.log(holdingsResult);
+  
+  // Extract JSON text from the structured content array (actual MCP response format)
+  const holdingsText = holdingsResult.content?.[0]?.text || '';
+  if (!holdingsText) {
+    throw new Error('No holdings data received from Fyers');
+  }
+  
+  console.log('Raw holdings response:', holdingsResult);
+  
   // Parse holdings (Fyers returns JSON string)
   let holdingsData;
   try {
     holdingsData = JSON.parse(holdingsText);
   } catch (error) {
-    logger.error('Failed to parse Fyers holdings:', error.message);
+    logger.error('Failed to parse Fyers holdings:', error.message, holdingsText);
     throw new Error('Failed to parse holdings data');
   }
 
@@ -70,10 +77,16 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
     'DELETE FROM User_Holdings WHERE user_email = ? AND broker = ?',
     [userEmail, 'fyers']
   );
-
-  // Insert new holdings
+  // Insert new holdings - Matches actual Fyers get_holdings response structure
   const holdings = holdingsData.holdings || [];
   for (const holding of holdings) {
+    let raw =0 ;
+       raw = (holdingsData.overall?.total_current_value -   holdingsData.overall?.total_pl)/holding.quantity;
+       
+    const invested_value = Math.round(raw * 100) / 100;
+    console.log(holdingsData.overall?.total_current_value)
+    console.log(holdingsData.overall?.total_current_value/holding.quantity)
+    console.log(holdingsData.overall?.total_pl)
     await db.query(
       `INSERT INTO User_Holdings 
        (user_email, broker, symbol, quantity, average_price, current_price, 
@@ -82,16 +95,16 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
       [
         userEmail,
         'fyers',
-        holding.symbol || holding.tradingsymbol,
-        holding.quantity || holding.qty || 0,
-        holding.average_price || holding.avg_price || 0,
-        holding.current_price || holding.market_value || 0,
-        holding.ltp || holding.last_price || 0,
-        holding.pnl || 0,
-        holding.pnl_percentage || 0,
-        holding.product || 'CNC',
-        holding.exchange || 'NSE',
-        holding.isin || '',
+        holding.symbol || '',
+        holding.quantity || 0,
+        invested_value || 0,                    // ✅ Matches: "avgCost":0
+        holding.ltp || 0,               // ✅ Matches: "currentValue":0  
+        holding.ltp || 0,                        // ✅ Matches: "ltp":10.04
+        holding.total_pl || 0,                        // ✅ Matches: "pnl":0
+        holdingsData.overall?.pnl_perc || 0,     // ✅ Matches: "pnl_perc":0 (portfolio level)
+        'CNC',                                   // Default (not in individual holding)
+        holding.symbol?.split(':')[0] || 'NSE',  // ✅ Extracts "NSE" from "NSE:IDEA-EQ"
+        '',                                      // isin not provided
         JSON.stringify(holding)
       ]
     );
@@ -102,9 +115,12 @@ static async fetchAndSaveHoldings(sessionId, userEmail) {
   return {
     success: true,
     count: holdings.length,
-    holdings
+    holdings: holdingsData.holdings || [],
+    overall: holdingsData.overall
   };
 }
+
+
 static async fetchAndSavePositions(sessionId, userEmail) {
   if (!fyersAgents.has(sessionId)) {
     throw new Error('Fyers agent not initialized');
