@@ -77,7 +77,7 @@ export default function MainApp() {
   // Check user session
   const checkUserSession = async () => {
     try {
-      const response = await axios.get("/me");
+      const response = await axios.get("https://33trpk9t-5000.inc1.devtunnels.ms/me");
       if (response.data) {
         setUserInfo(response.data);
       }
@@ -459,9 +459,20 @@ export default function MainApp() {
             <button className="btn btn-secondary btn-sm" onClick={handleResetChat}>
               🔄 Reset Chat
             </button>
-            <button className="btn btn-danger btn-sm" onClick={() => handleLogout("all")}>
-              🚪 Logout All Brokers
-            </button>
+            <button 
+      className="btn btn-warning btn-sm" 
+      onClick={() => handleLogout('all')}
+    >
+      Logout All Brokers
+    </button>
+    
+    {/* ✅ NEW: User Logout (Safe - keeps brokers) */}
+    <button 
+      className="btn btn-danger btn-sm" 
+      onClick={handleUserLogout}
+    >
+      Logout User
+    </button>
           </div>
         </div>
       </aside>
@@ -514,13 +525,13 @@ export default function MainApp() {
             </div>
 
             {/* User Logout Button */}
-            <button
-              className="btn btn-danger"
-              style={{ padding: "10px 14px", fontSize: "13px" }}
-              onClick={handleUserLogout}
-            >
-              🔓 Logout
-            </button>
+            <button 
+      className="btn btn-danger" 
+      style={{ padding: '10px 14px', fontSize: '13px' }}
+      onClick={handleUserLogout}
+    >
+      Logout User
+    </button>
           </div>
         </header>
 

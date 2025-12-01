@@ -33,9 +33,11 @@ app.use(cors({
   origin: CORS_ORIGINS,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Session-Id'],
   exposedHeaders: ['Set-Cookie']
 }));
+
+
 
 // Session middleware
 app.use(sessionConfig);

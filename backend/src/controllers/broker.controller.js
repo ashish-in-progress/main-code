@@ -76,47 +76,40 @@ static async getHoldings(req, res) {
     });
   }
 
-  static async logout(req, res) {
-    const { broker = 'all' } = req.body;
-    const sessionId = getSessionId(req);
-
-    try {
-      if (broker === 'all') {
-        cleanupSession(sessionId);
-        
-        req.session.destroy((err) => {
-          if (err) {
-            logger.error('Session destroy error:', err);
-          }
-        });
-
-        return res.json({
-          success: true,
-          message: 'Logged out from all brokers'
-        });
-        
-      } else if (['fyers', 'kite', 'upstox'].includes(broker)) {
-        cleanupBroker(sessionId, broker);
-        
-        if (broker === 'upstox') {
-          delete req.session.upstoxAccessToken;
-        }
-
-        return res.json({
-          success: true,
-          message: `Logged out from ${broker}`
-        });
-      }
-
-      res.status(400).json({
-        success: false,
-        error: 'Invalid broker specified'
+// broker.controller.js - FIXED LOGOUT (FULL METHOD)
+static async logout(req, res) {
+  const { broker } = req.body;  // 'fyers', 'kite', 'upstox', 'all'
+  const sessionId = getSessionId(req);
+  
+  try {
+    if (broker === 'all') {
+      // Broker logout only - DON'T destroy session
+      cleanupSession(sessionId);
+      res.json({ 
+        success: true, 
+        message: 'Logged out from all brokers' 
       });
-    } catch (error) {
-      logger.error('Logout error:', error.message);
-      res.status(500).json({ success: false, error: error.message });
+    } else if (['fyers', 'kite', 'upstox'].includes(broker)) {
+      cleanupBroker(sessionId, broker);
+      res.json({ 
+        success: true, 
+        message: `Logged out from ${broker}` 
+      });
+    } else {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Invalid broker specified' 
+      });
     }
+  } catch (error) {
+    logger.error('Logout error:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
+}
+
 
   static getSessionInfo(req, res) {
     const sessionId = getSessionId(req);

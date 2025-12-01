@@ -3,53 +3,41 @@
 /**
  * Middleware to require authentication
  */
+// Verify access token
 export function requireAuth(req, res, next) {
-  if (!req.session.user) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-  next();
-}
-
-/**
- * Middleware to require broker authentication
- */
-export function requireBrokerAuth(broker) {
-  return (req, res, next) => {
-    const sessionId = req.session.sessionId;
-    
-    if (!sessionId) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'No session found' 
-      });
-    }
-
-    // Check broker-specific authentication
-    switch (broker.toLowerCase()) {
-      case 'fyers':
-        // Will be checked in controller
-        break;
-      case 'kite':
-        // Will be checked in controller
-        break;
-      case 'upstox':
-        if (!req.session.upstoxAccessToken) {
-          return res.status(401).json({ 
-            success: false, 
-            error: 'Not authenticated with Upstox' 
-          });
-        }
-        break;
-      default:
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Invalid broker' 
-        });
-    }
-
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.split(' ')[1];
+  if (!token) return res.status(401).json({ message: 'No token' });
+  
+  try {
+    req.user = jwt.verify(token, ACCESS_SECRET);
     next();
-  };
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Token expired', refreshRequired: true });
+    }
+    res.status(401).json({ message: 'Invalid token' });
+  }
 }
+
+// Broker auth: JWT + sessionId validation
+export function requireBrokerAuth(broker) {
+  return [requireAuth, async (req, res, next) => {
+    const sessionId = req.headers['x-session-id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session ID' });
+    
+    const session = await db.query(
+      'SELECT * FROM UserSessions WHERE session_id = ? AND user_email = ?', 
+      [sessionId, req.user.email]
+    );
+    if (!session.length) return res.status(401).json({ error: 'Invalid session' });
+    
+    req.sessionId = sessionId;
+    next();
+  }];
+}
+
+
 
 /**
  * Optional: Middleware to log requests

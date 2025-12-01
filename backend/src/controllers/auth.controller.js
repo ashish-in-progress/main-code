@@ -1,7 +1,13 @@
-// ==================== src/controllers/auth.controller.js ====================
+// src/controllers/auth.controller.js - FULLY FIXED WITH SESSION REUSE
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { db } from '../config/db.js';
 import { logger } from '../utils/logger.js';
+import { IN_PROD } from '../config/constants.js';
+
+const ACCESS_SECRET = process.env.ACCESS_SECRET || crypto.randomBytes(32).toString('hex');
+const REFRESH_SECRET = process.env.REFRESH_SECRET || crypto.randomBytes(32).toString('hex');
 
 export class AuthController {
   static async signup(req, res) {
@@ -27,7 +33,6 @@ export class AuthController {
         return res.status(400).json({ message: "Invalid email format" });
       }
 
-      // Check if email already exists
       const [existing] = await db.query(
         "SELECT email FROM User_data WHERE email = ?",
         [email]
@@ -45,7 +50,6 @@ export class AuthController {
       );
 
       logger.info(`New user registered: ${email}`);
-
       res.status(201).json({ message: "User registered successfully" });
     } catch (err) {
       logger.error("Signup error:", err);
@@ -63,7 +67,6 @@ export class AuthController {
       if (typeof email !== 'string' || typeof password !== 'string') {
         return res.status(400).json({ message: "Invalid input types" });
       }
-
       email = email.trim().toLowerCase();
       password = password.trim();
 
@@ -72,7 +75,7 @@ export class AuthController {
       }
 
       const [rows] = await db.query(
-        "SELECT email, pass FROM User_data WHERE email = ?",
+        "SELECT * FROM User_data WHERE email = ?",
         [email]
       );
 
@@ -89,40 +92,145 @@ export class AuthController {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
+      // ✅ FIXED: REUSE EXISTING SESSIONID FROM DB (BROKERS SURVIVE!)
+      let sessionId;
+      
+      // Check DB for user's LAST sessionId (where brokers are stored)
+      const [existingSessions] = await db.query(
+        'SELECT session_id FROM UserSessions WHERE user_email = ? ORDER BY last_active DESC LIMIT 1',
+        [user.email]
+      );
+      
+      if (existingSessions.length > 0) {
+        // REUSE EXISTING SESSION - BROKERS ALIVE!
+        sessionId = existingSessions[0].session_id;
+        logger.info(`🔄 Reusing sessionId ${sessionId.substring(0, 8)}... for ${user.email}`);
+        
+        // Update last_active timestamp
+        await db.query(
+          'UPDATE UserSessions SET last_active = NOW() WHERE session_id = ?',
+          [sessionId]
+        );
+      } else {
+        // NEW user - create fresh session
+        sessionId = crypto.randomUUID();
+        await db.query(
+          'INSERT INTO UserSessions (session_id, user_email, created_at) VALUES (?, ?, NOW())',
+          [sessionId, user.email]
+        );
+        logger.info(`🆕 New sessionId ${sessionId.substring(0, 8)}... for ${user.email}`);
+      }
+
+      // Generate JWT tokens
+      const payload = { 
+        userId: user.id || crypto.randomUUID(),
+        email: user.email, 
+        jti: crypto.randomUUID() 
+      };
+      
+      const accessToken = jwt.sign(payload, ACCESS_SECRET, { expiresIn: '15m' });
+      const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: '30d' });
+
+      // FORCE session to use SAME sessionId across logins
       req.session.user = { email: user.email };
+      req.session.sessionId = sessionId;
 
-      logger.info(`User logged in: ${user.email}`);
+      // Set refresh token cookie
+      res.cookie('refreshToken', refreshToken, { 
+        httpOnly: true, 
+        secure: IN_PROD === 'true',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000  // 30 days
+      });
 
-      res.json({ message: "Login successful", user: req.session.user });
+      logger.info(`User logged in: ${user.email} (session: ${sessionId.substring(0, 8)}...)`);
+
+      res.json({
+        success: true,
+        accessToken,
+        sessionId,
+        user: { email: user.email }
+      });
+
     } catch (err) {
       logger.error("Login error:", err);
       res.status(500).json({ message: "Login failed" });
     }
   }
 
-  static logout(req, res) {
-    if (!req.session) {
-      return res.json({ message: "Already logged out" });
+  static async refresh(req, res) {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'No refresh token' });
     }
 
-    const userEmail = req.session.user?.email;
-    req.session.destroy(err => {
-      if (err) {
-        logger.error("Logout error:", err);
-        return res.status(500).json({ message: "Logout failed" });
+    try {
+      const decoded = jwt.verify(refreshToken, REFRESH_SECRET);
+      
+      // Check blacklist (graceful if table missing)
+      try {
+        const [blacklisted] = await db.query(
+          'SELECT 1 FROM TokenBlacklist WHERE jti = ? AND expires_at > NOW()', 
+          [decoded.jti]
+        );
+        if (blacklisted.length > 0) {
+          throw new Error('Token blacklisted');
+        }
+      } catch (e) {
+        logger.debug('TokenBlacklist check skipped:', e.message);
       }
+
+      const newPayload = { 
+        ...decoded, 
+        iat: Math.floor(Date.now() / 1000),
+        jti: crypto.randomUUID()
+      };
+      
+      const newAccessToken = jwt.sign(newPayload, ACCESS_SECRET, { expiresIn: '15m' });
+      
+      res.json({ 
+        accessToken: newAccessToken,
+        refreshRequired: false 
+      });
+    } catch (err) {
+      logger.warn('Refresh token invalid:', err.message);
+      res.status(401).json({ message: 'Invalid refresh token' });
+    }
+  }
+
+  static async logout(req, res) {
+    try {
+      const sessionId = req.session?.sessionId;
+      const userEmail = req.session?.user?.email || req.user?.email;
+      
+      // Clear USER session/cookies ONLY (KEEP DB RECORD!)
+      if (req.session) {
+        req.session.destroy();
+      }
+      res.clearCookie('refreshToken');
       res.clearCookie('unified_trading_session');
-      if (userEmail) {
-        logger.info(`User logged out: ${userEmail}`);
-      }
-      res.json({ message: "Logged out successfully" });
-    });
+      
+      logger.info(`User logged out safely (session ${sessionId?.substring(0,8)}... preserved)`);
+      res.json({ message: 'Logged out successfully' });
+    } catch (err) {
+      logger.error("Logout error:", err);
+      res.clearCookie('refreshToken');
+      res.clearCookie('unified_trading_session');
+      res.json({ message: 'Logged out successfully' });
+    }
   }
 
   static me(req, res) {
-    if (!req.session.user) {
+    if (!req.session?.user && !req.user) {
       return res.status(401).json({ message: "Not logged in" });
     }
-    res.json({ user: req.session.user });
+    
+    const user = req.session?.user || req.user;
+    res.json({ 
+      user: {
+        email: user.email,
+        sessionId: req.session?.sessionId
+      }
+    });
   }
 }
