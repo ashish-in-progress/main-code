@@ -2,6 +2,20 @@ import nodemailer from "nodemailer";
 import MarkdownIt from "markdown-it";
 import axios from "axios";
 import { logger } from "../../utils/logger.js";
+function extractTicker(raw) {
+  if (!raw) return null;
+
+  // Remove exchange prefix like "NSE:" or "BSE:"
+  let s = raw.trim().replace(/^[A-Za-z]+:/, "");
+
+  // Remove -EQ or .EQ
+  s = s.replace(/[-.]EQ$/i, "");
+
+  return s.toUpperCase(); // return IDEA
+}
+
+// Example:
+// console.log(extractTicker("NSE:IDEA-EQ")); // IDEA
 
 export class EmailService {
   static transporter = null;
@@ -20,7 +34,8 @@ export class EmailService {
     try {
       logger.info(`Fetching current price for ${symbol} from API`);
       
-      const response = await axios.get(`https://33trpk9t-5500.inc1.devtunnels.ms/current?symbol=${symbol}.NS`);
+      const ticker = extractTicker(symbol);  // IDEA
+      const response = await axios.get(`https://33trpk9t-5500.inc1.devtunnels.ms/current?symbol=${ticker}.NS`);
       
       if (response.data && response.data.current_price) {
         return response.data.current_price;
