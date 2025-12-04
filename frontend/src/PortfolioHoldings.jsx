@@ -1,9 +1,6 @@
 // PortfolioHoldings.jsx
 import React, { useState, useEffect } from "react";
-import axios from "axios";
-
-axios.defaults.withCredentials = true;
-axios.defaults.baseURL = "https://33trpk9t-5000.inc1.devtunnels.ms/api";
+import API from "./api.js";
 
 export default function PortfolioHoldings({ onBack }) {
   const [allData, setAllData] = useState([]);
@@ -16,7 +13,7 @@ export default function PortfolioHoldings({ onBack }) {
       setLoading(true);
       setError(null);
 
-      const response = await axios.get("/broker/holdings");
+      const response = await API.get("/api/broker/holdings");
 
       if (response.data.success) {
         setAllData(response.data.holdings || []);

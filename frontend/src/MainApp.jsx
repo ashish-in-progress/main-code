@@ -1,16 +1,13 @@
 // MainApp.jsx
 import React, { useState, useEffect, useRef } from "react";
-import axios from "axios";
+
 import PortfolioSuggestor from "./PortfolioSuggestor.jsx";
 import StockAnalyzer from "./StockAnalyzer.jsx";
 import PortfolioHoldings from "./PortfolioHoldings.jsx";
 import InsightsPage from "./InsightsPage.jsx";
+import API from "./api.js";
 // API Configuration
-const API_BASE_URL = "https://33trpk9t-5000.inc1.devtunnels.ms/api";
-
-// Configure axios with credentials
-axios.defaults.withCredentials = true;
-axios.defaults.baseURL = API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function MainApp() {
   // View Management
@@ -77,7 +74,7 @@ export default function MainApp() {
   // Check user session
   const checkUserSession = async () => {
     try {
-      const response = await axios.get("https://33trpk9t-5000.inc1.devtunnels.ms/me");
+      const response = await API.get("/me");
       if (response.data) {
         setUserInfo(response.data);
       }
@@ -89,7 +86,7 @@ export default function MainApp() {
   // Check broker authentication status
   const checkBrokerStatus = async () => {
     try {
-      const response = await axios.get("/broker/status");
+      const response = await API.get("/api/broker/status");
       if (response.data) {
         setBrokerStatus(response.data.brokers);
         setActiveBroker(response.data.active_broker);
@@ -122,7 +119,7 @@ export default function MainApp() {
       if (broker === "fyers") {
         addMessage("system", "🔌 Connecting to Fyers...");
 
-        const connectRes = await axios.post("/fyers/connect");
+        const connectRes = await API.post("/api/fyers/connect");
         if (!connectRes.data.success) {
           addMessage("error", "❌ Failed to connect to Fyers");
           return;
@@ -130,7 +127,7 @@ export default function MainApp() {
 
         addMessage("system", "✅ Connected to Fyers MCP");
 
-        const loginRes = await axios.post("/fyers/login");
+        const loginRes = await API.post("/api/fyers/login");
         if (!loginRes.data.success || !loginRes.data.login_url) {
           addMessage("error", "❌ Failed to get Fyers login URL");
           return;
@@ -154,7 +151,7 @@ export default function MainApp() {
       } else if (broker === "kite") {
         addMessage("system", "🔌 Connecting to Kite/Zerodha...");
 
-        const response = await axios.post("/kite/login");
+        const response = await API.post("/api/kite/login");
         if (!response.data.success || !response.data.login_url) {
           addMessage("error", "❌ Failed to get Kite login URL");
           return;
@@ -177,7 +174,7 @@ export default function MainApp() {
         }
       } else if (broker === "upstox") {
         addMessage("system", "🔌 Redirecting to Upstox login...");
-        const response = await axios.get("/upstox/login");
+        const response = await API.get("/api/upstox/login");
         if (response.data.success && response.data.auth_url) {
           window.location.href = response.data.auth_url;
         } else {
@@ -198,9 +195,9 @@ export default function MainApp() {
 
     try {
       const endpoint =
-        currentBrokerLogin === "kite" ? "/kite/verify-auth" : "/fyers/verify-auth";
+        currentBrokerLogin === "kite" ? "/api/kite/verify-auth" : "/api/fyers/verify-auth";
 
-      const response = await axios.post(endpoint);
+      const response = await API.post(endpoint);
 
       if (response.data.success && response.data.authenticated) {
         addMessage("system", `✅ ${currentBrokerLogin.toUpperCase()} authenticated!`);
@@ -227,7 +224,7 @@ export default function MainApp() {
     }
 
     try {
-      const response = await axios.post("/broker/select", { broker });
+      const response = await API.post("/api/broker/select", { broker });
       if (response.data.success) {
         setActiveBroker(broker);
         addMessage("system", `🔄 Switched to ${broker.toUpperCase()}`);
@@ -256,7 +253,7 @@ export default function MainApp() {
     setLoading(true);
 
     try {
-      const response = await axios.post("/chat", { message: userMessage });
+      const response = await API.post("/api/chat", { message: userMessage });
 
       if (response.data.success) {
         addMessage("assistant", response.data.response);
@@ -274,7 +271,7 @@ export default function MainApp() {
   // Reset conversation
   const handleResetChat = async () => {
     try {
-      await axios.post("/chat/reset");
+      await API.post("/api/chat/reset");
       setMessages([]);
       addMessage("system", "🔄 Conversation reset");
     } catch (error) {
@@ -285,7 +282,7 @@ export default function MainApp() {
   // Logout from brokers
   const handleLogout = async (broker = "all") => {
     try {
-      await axios.post("/broker/logout", { broker });
+      await API.post("/api/broker/logout", { broker });
 
       if (broker === "all") {
         setMessages([]);
@@ -308,7 +305,7 @@ export default function MainApp() {
   // Logout user
   const handleUserLogout = async () => {
     try {
-      await axios.post("https://33trpk9t-5000.inc1.devtunnels.ms/logout", {}, { withCredentials: true });
+      await API.post("/logout", {}, { withCredentials: true });
       window.location.href = "/";
     } catch (error) {
       console.error("User logout error:", error);

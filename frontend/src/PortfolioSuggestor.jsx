@@ -7,12 +7,12 @@ const WEBHOOK_URL = '/n8n/webhook/82d63927-dc2e-416f-abf9-9915cbb2d705';
 const PortfolioSuggestor = ({ onBackToTrading }) => {
   // Use stable sessionId between reloads
   const [sessionId, setSessionId] = useState(() =>
-    localStorage.getItem('sessionId') || `user-${Date.now()}`
+    localStorage.getItem('portfolioSessionId') || `portfolio-${Date.now()}`
   );
 
   // Load messages from localStorage
   const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem(`chat_${sessionId}`);
+    const saved = localStorage.setItem(`chat_portfolio_${sessionId}`, JSON.stringify(messages));  // ✅
     return saved
       ? JSON.parse(saved)
       : [
@@ -31,13 +31,13 @@ const PortfolioSuggestor = ({ onBackToTrading }) => {
   const inputRef = useRef(null);
 
   // Persist sessionId for future reloads
-  useEffect(() => {
-    localStorage.setItem('sessionId', sessionId);
-  }, [sessionId]);
+ useEffect(() => {
+  localStorage.setItem('portfolioSessionId', sessionId);
+}, [sessionId]);
 
   // Save messages to localStorage on change
   useEffect(() => {
-    localStorage.setItem(`chat_${sessionId}`, JSON.stringify(messages));
+    localStorage.getItem('portfolioSessionId') || `portfolio-${Date.now()}`
   }, [messages, sessionId]);
 
   const scrollToBottom = () => {
@@ -153,7 +153,7 @@ const PortfolioSuggestor = ({ onBackToTrading }) => {
 
   const handleClearChat = () => {
     if (window.confirm("Are you sure you want to clear the chat history?")) {
-      localStorage.removeItem(`chat_${sessionId}`);
+      localStorage.removeItem(`chat_portfolio_${sessionId}`);
       setMessages([{
         role: 'assistant',
         content: "Chat cleared 🧹. How can I assist you now?",

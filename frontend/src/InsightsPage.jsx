@@ -1,9 +1,6 @@
 // InsightsPage.jsx
 import React, { useState, useEffect } from "react";
-import axios from "axios";
-
-axios.defaults.withCredentials = true;
-axios.defaults.baseURL = "https://33trpk9t-5000.inc1.devtunnels.ms/api";
+import API from "./api.js";
 
 export default function InsightsPage({ onBack, userEmail: initialEmail }) {
   const [loading, setLoading] = useState(false);
@@ -22,7 +19,7 @@ export default function InsightsPage({ onBack, userEmail: initialEmail }) {
 
   const fetchJobsList = async () => {
     try {
-      const res = await axios.get("/jobs/list");
+      const res = await API.get("/api/jobs/list");
       if (res.data.success) {
         setJobsList(res.data.jobs);
       }
@@ -46,7 +43,7 @@ export default function InsightsPage({ onBack, userEmail: initialEmail }) {
 
     try {
       console.log("🚀 Sending request to /jobs/test-user...");
-      const res = await axios.post("/jobs/test-user", { email: userEmail });
+      const res = await API.post("/api/jobs/test-user", { email: userEmail });
       console.log("✅ Response:", res.data);
 
       if (res.data.success) {

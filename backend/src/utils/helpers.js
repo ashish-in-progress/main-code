@@ -5,13 +5,7 @@ import { logger } from './logger.js';
 /**
  * Get or create session ID
  */
-export function getSessionId(req) {
-  if (!req.session.sessionId) {
-    req.session.sessionId = crypto.randomBytes(16).toString('hex');
-    logger.info(`Created new session: ${req.session.sessionId.substring(0, 8)}...`);
-  }
-  return req.session.sessionId;
-}
+
 
 /**
  * Get active broker from session
@@ -23,10 +17,34 @@ export function getActiveBroker(req) {
 /**
  * Set active broker in session
  */
+
+// helpers.js - ADD THIS EXPORT
+export function getSessionId(req) {
+  // 1. Try session header (preferred)
+  let sessionId = req.headers['x-session-id'];
+  
+  // 2. Fallback to session storage
+  if (!sessionId && req.session?.sessionId) {
+    sessionId = req.session.sessionId;
+  }
+  
+  // 3. Fallback to JWT user payload
+  if (!sessionId && req.user) {
+    // Query DB for user's sessionId
+    return req.user.email; // Temporary - will be fixed
+  }
+  
+  if (!sessionId) {
+    throw new Error('No session ID found in request');
+  }
+  
+  return sessionId;
+}
+
 export function setActiveBroker(req, broker) {
-  req.session.activeBroker = broker.toLowerCase();
-  logger.info(`Active broker set to: ${broker}`);
-  return broker.toLowerCase();
+  if (req.session) {
+    req.session.activeBroker = broker;
+  }
 }
 
 /**
