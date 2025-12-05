@@ -37,10 +37,8 @@ export default function InsightsPage({ onBack, userEmail: initialEmail }) {
       setMessage("❌ Email is required");
       return;
     }
-
     setLoading(true);
     setMessage("");
-
     try {
       console.log("🚀 Sending request to /jobs/test-user...");
       const res = await API.post("/api/jobs/test-user", { email: userEmail });
