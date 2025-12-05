@@ -181,6 +181,47 @@ export class EmailService {
       throw error;
     }
   }
+// ✅ ADD sendEmail() BEFORE sendOTP()
+static async sendEmail(options) {
+  if (!this.transporter) {
+    this.initialize();
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+    ...options
+  };
+
+  try {
+    const info = await this.transporter.sendMail(mailOptions);
+    logger.info(`✅ Email sent to ${options.to}: ${info.messageId}`);
+    return info;
+  } catch (error) {
+    logger.error(`❌ Failed to send email to ${options.to}:`, error.message);
+    throw error;
+  }
+}
+
+static async sendOTP(email, otp) {
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <h2 style="color: #2563eb;">🔐 TradeAI Login Verification</h2>
+      <div style="background: #f8f9fa; padding: 30px; border-radius: 12px; text-align: center; margin: 20px 0;">
+        <h1 style="font-size: 48px; color: #2563eb; letter-spacing: 12px; margin: 0; font-weight: bold;">${otp}</h1>
+        <p style="color: #6b7280; font-size: 16px; margin: 20px 0;">Your verification code expires in <strong>5 minutes</strong></p>
+      </div>
+      <p style="color: #6b7280; font-size: 14px;">
+        Enter this code in the app to complete login. If you didn't request this, ignore this email.
+      </p>
+    </div>
+  `;
+  
+  return await this.sendEmail({
+    to: email,
+    subject: `TradeAI Login - Your OTP Code: ${otp}`,
+    html: htmlContent
+  });
+}
 
   /**
    * Generate Fixed Email Template

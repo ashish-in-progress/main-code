@@ -1,10 +1,11 @@
-// src/controllers/auth.controller.js - FULLY FIXED WITH SESSION REUSE
+// src/controllers/auth.controller.js - FULLY FIXED OTP + SESSION REUSE
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../config/db.js';
 import { logger } from '../utils/logger.js';
 import { IN_PROD } from '../config/constants.js';
+import { EmailService } from '../services/email/email.service.js';
 
 const ACCESS_SECRET = process.env.ACCESS_SECRET || crypto.randomBytes(32).toString('hex');
 const REFRESH_SECRET = process.env.REFRESH_SECRET || crypto.randomBytes(32).toString('hex');
@@ -12,7 +13,7 @@ const REFRESH_SECRET = process.env.REFRESH_SECRET || crypto.randomBytes(32).toSt
 export class AuthController {
   static async signup(req, res) {
     try {
-      let { email, password } = req.body;
+      let { email, password } = req.body || {};
 
       if (typeof email !== 'string' || typeof password !== 'string') {
         return res.status(400).json({ message: "Invalid input types" });
@@ -60,70 +61,117 @@ export class AuthController {
     }
   }
 
+  // ✅ FULLY FIXED LOGIN METHOD
   static async login(req, res) {
     try {
-      let { email, password } = req.body;
+      // 1. SAFE BODY PARSING
+      const body = req.body || {};
+      let { email, password, otp } = body;
 
-      if (typeof email !== 'string' || typeof password !== 'string') {
-        return res.status(400).json({ message: "Invalid input types" });
-      }
+      if (!email) email = '';
+      if (!password) password = '';
+      if (!otp) otp = '';
+
       email = email.trim().toLowerCase();
       password = password.trim();
 
-      if (!email || !password) {
-        return res.status(400).json({ message: "Missing email or password" });
+      if (!email || (!password && !otp)) {
+        return res.status(400).json({ message: "Missing email or password/OTP" });
       }
 
-      const [rows] = await db.query(
-        "SELECT * FROM User_data WHERE email = ?",
-        [email]
-      );
+      let user;
 
-      if (!rows || rows.length === 0) {
-        return res.status(401).json({ message: "Invalid credentials" });
+      // 2. AUTHENTICATION FLOW
+      if (password && !otp) {
+        // FIRST STEP: PASSWORD VALIDATION
+        logger.info(`🔐 Password login attempt for ${email}`);
+        const [rows] = await db.query("SELECT * FROM User_data WHERE email = ?", [email]);
+        
+        if (!rows?.length) {
+          return res.status(401).json({ message: "Invalid credentials" });
+        }
+
+        user = rows[0];
+        const passwordMatch = await bcrypt.compare(password, user.pass);
+        if (!passwordMatch) {
+          logger.warn(`❌ Invalid password for ${email}`);
+          return res.status(401).json({ message: "Invalid credentials" });
+        }
+      } else if (otp) {
+        // SECOND STEP: OTP VALIDATION
+        logger.info(`🔍 OTP validation for ${email}`);
+        const [rows] = await db.query("SELECT * FROM User_data WHERE email = ?", [email]);
+        
+        if (!rows?.length) {
+          return res.status(401).json({ message: "Invalid credentials" });
+        }
+        user = rows[0];
+      } else {
+        return res.status(400).json({ message: "Invalid request" });
       }
 
-      const user = rows[0];
-      const storedHash = user.pass;
-
-      const passwordMatch = await bcrypt.compare(password, storedHash);
-
-      if (!passwordMatch) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
-      // ✅ FIXED: REUSE EXISTING SESSIONID FROM DB (BROKERS SURVIVE!)
+      // 3. SESSION MANAGEMENT (KEEP BROKERS ALIVE)
       let sessionId;
-      
-      // Check DB for user's LAST sessionId (where brokers are stored)
       const [existingSessions] = await db.query(
         'SELECT session_id FROM UserSessions WHERE user_email = ? ORDER BY last_active DESC LIMIT 1',
         [user.email]
       );
-      
-      if (existingSessions.length > 0) {
-        // REUSE EXISTING SESSION - BROKERS ALIVE!
+
+      if (existingSessions?.length > 0) {
         sessionId = existingSessions[0].session_id;
-        logger.info(`🔄 Reusing sessionId ${sessionId.substring(0, 8)}... for ${user.email}`);
-        
-        // Update last_active timestamp
-        await db.query(
-          'UPDATE UserSessions SET last_active = NOW() WHERE session_id = ?',
-          [sessionId]
-        );
+        await db.query('UPDATE UserSessions SET last_active = NOW() WHERE session_id = ?', [sessionId]);
+        logger.info(`🔄 Reusing session ${sessionId.substring(0, 8)}... for ${user.email}`);
       } else {
-        // NEW user - create fresh session
         sessionId = crypto.randomUUID();
         await db.query(
           'INSERT INTO UserSessions (session_id, user_email, created_at) VALUES (?, ?, NOW())',
           [sessionId, user.email]
         );
-        logger.info(`🆕 New sessionId ${sessionId.substring(0, 8)}... for ${user.email}`);
+        logger.info(`🆕 New session ${sessionId.substring(0, 8)}... for ${user.email}`);
       }
 
-      // Generate JWT tokens
+      // 4. OTP FLOW
+      if (!otp) {
+        // GENERATE & SEND OTP
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        await db.query(
+          `INSERT INTO UserOTPs (user_email, otp, expires_at, created_at) 
+           VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), NOW()) 
+           ON DUPLICATE KEY UPDATE otp = ?, expires_at = DATE_ADD(NOW(), INTERVAL 5 MINUTE)`,
+          [user.email, otpCode, otpCode]
+        );
+        
+        logger.info(`📧 Sending OTP ${otpCode} to ${user.email}`);
+        await EmailService.sendOTP(user.email, otpCode);
+        
+        return res.json({
+          success: false,
+          otp_required: true,
+          message: 'OTP sent to your email',
+          sessionId
+        });
+      }
+
+      // 5. VERIFY OTP
+      logger.info(`🔍 Verifying OTP ${otp} for ${user.email}`);
+      const [otpRows] = await db.query(
+        'SELECT * FROM UserOTPs WHERE user_email = ? AND otp = ? AND expires_at > NOW()',
+        [user.email, otp]
+      );
+
+      if (!otpRows?.length) {
+        logger.warn(`❌ Invalid/expired OTP for ${user.email}`);
+        return res.status(400).json({ message: 'Invalid or expired OTP' });
+      }
+
+      // 6. CLEANUP OTP
+      
+      await db.query('DELETE FROM UserOTPs WHERE user_email = ?', [user.email]);
+
+      // 7. GENERATE TOKENS (FIXED: use email instead of id)
       const payload = { 
-        userId: user.id || crypto.randomUUID(),
+        userId: user.email,  // ✅ FIXED: was user.id (undefined)
         email: user.email, 
         jti: crypto.randomUUID() 
       };
@@ -131,20 +179,19 @@ export class AuthController {
       const accessToken = jwt.sign(payload, ACCESS_SECRET, { expiresIn: '15m' });
       const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: '30d' });
 
-      // FORCE session to use SAME sessionId across logins
+      // 8. SET SESSION & COOKIES
       req.session.user = { email: user.email };
       req.session.sessionId = sessionId;
 
-      // Set refresh token cookie
-      res.cookie('refreshToken', refreshToken, { 
-        httpOnly: true, 
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
         secure: IN_PROD === 'true',
         sameSite: 'lax',
-        maxAge: 30 * 24 * 60 * 60 * 1000  // 30 days
+        maxAge: 30 * 24 * 60 * 60 * 1000
       });
 
-      logger.info(`User logged in: ${user.email} (session: ${sessionId.substring(0, 8)}...)`);
-
+      logger.info(`✅ LOGIN SUCCESS: ${user.email} (session: ${sessionId.substring(0, 8)}...)`);
+      
       res.json({
         success: true,
         accessToken,
