@@ -61,7 +61,6 @@ export class AuthController {
     }
   }
 
-  // ✅ FULLY FIXED LOGIN METHOD
   static async login(req, res) {
     try {
       // 1. SAFE BODY PARSING
