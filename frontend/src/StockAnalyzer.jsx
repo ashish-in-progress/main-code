@@ -1,5 +1,5 @@
 // StockDashboard.jsx
-// PatternAI Pro – Rich visual dashboard (no Tailwind)
+// PatternAI Pro – Enhanced Dashboard with Full API Utilization
 
 import React, { useState, useEffect } from "react";
 import Plot from "react-plotly.js";
@@ -20,6 +20,12 @@ import {
   Sparkles,
   CheckCircle,
   XCircle,
+  TrendingDown,
+  Minus,
+  AlertTriangle,
+  Info,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 import "./analyzer.css";
@@ -216,7 +222,7 @@ function EmptyState() {
           <p className="empty-state-text">
             Try symbols like <span className="empty-state-symbol">AAPL</span>,{" "}
             <span className="empty-state-symbol">TSLA</span>,{" "}
-            <span className="empty-state-symbol">TCS.NS</span>.
+            <span className="empty-state-symbol">RELIANCE.NS</span>.
           </p>
           <p className="empty-state-caption">
             Pattern matching runs over the selected window and compares regimes
@@ -263,7 +269,7 @@ function SearchSection(props) {
           <Search className="search-input-icon" />
           <input
             className="search-input"
-            placeholder="Enter ticker (e.g. AAPL, TCS.NS)"
+            placeholder="Enter ticker (e.g. AAPL, RELIANCE.NS)"
             value={symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
           />
@@ -395,6 +401,7 @@ function OverviewTab({ data, getSignalColor }) {
         <Metrics data={data} getSignalColor={getSignalColor} />
         <MainCharts data={data} />
         <CandlestickStrip data={data} />
+        <CandlestickStatistics data={data} />
       </div>
       <aside className="overview-side">
         <SideInsights data={data} />
@@ -613,7 +620,7 @@ function MainCharts({ data }) {
           </p>
         </div>
         <div className="chart-ai-info-grid">
-          <Info
+          <InfoBox
             label="Volatility"
             value={
               data.indicators?.volatility != null
@@ -621,7 +628,7 @@ function MainCharts({ data }) {
                 : "--"
             }
           />
-          <Info
+          <InfoBox
             label="Volume ratio"
             value={
               data.indicators?.volume_ratio != null
@@ -635,11 +642,352 @@ function MainCharts({ data }) {
   );
 }
 
-function Info({ label, value }) {
+function InfoBox({ label, value }) {
   return (
     <div className="info-block">
       <div className="info-label">{label}</div>
       <div className="info-value">{value}</div>
+    </div>
+  );
+}
+
+// ==============================
+// CANDLESTICK STRIP (ENHANCED)
+// ==============================
+function CandlestickStrip({ data }) {
+  const recent = data.candlestick_patterns?.recent || [];
+
+  if (recent.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: '24px' }}>
+      <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: '600', color: '#1f2937' }}>
+        🕯️ Recent Candlestick Patterns
+      </h3>
+      
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+        gap: '16px'
+      }}>
+        {recent.slice(0, 6).map((p, idx) => {
+          const typeColor = p.type.includes('bullish') ? '#10b981' :
+                          p.type.includes('bearish') ? '#ef4444' : '#f59e0b';
+          
+          return (
+            <div 
+              key={idx} 
+              style={{
+                background: '#ffffff',
+                border: '2px solid #e5e7eb',
+                borderRadius: '12px',
+                padding: '20px',
+                position: 'relative',
+                transition: 'all 0.2s',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = typeColor;
+                e.currentTarget.style.boxShadow = `0 4px 12px ${typeColor}30`;
+                e.currentTarget.style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#e5e7eb';
+                e.currentTarget.style.boxShadow = 'none';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                <div style={{
+                  fontSize: '1rem',
+                  fontWeight: '600',
+                  color: '#1f2937',
+                  lineHeight: '1.3'
+                }}>
+                  {p.name}
+                </div>
+                <div style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  background: `${typeColor}20`,
+                  color: typeColor,
+                  minWidth: '50px',
+                  textAlign: 'center'
+                }}>
+                  {p.confidence}%
+                </div>
+              </div>
+
+              {/* Badges Row */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  background: '#f3f4f6',
+                  color: '#6b7280',
+                  fontWeight: '600'
+                }}>
+                  {p.reliability}
+                </span>
+                
+                {p.confirmation && (
+                  <span style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.7rem',
+                    background: '#dcfce7',
+                    color: '#059669',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <CheckCircle style={{ width: '12px', height: '12px' }} />
+                    Confirmed
+                  </span>
+                )}
+                
+                {p.volume_confirmed && (
+                  <span style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.7rem',
+                    background: '#dbeafe',
+                    color: '#1e40af',
+                    fontWeight: '600'
+                  }}>
+                    Vol ✓
+                  </span>
+                )}
+
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  background: p.type.includes('bullish') ? '#d1fae5' : 
+                             p.type.includes('bearish') ? '#fee2e2' : '#fef3c7',
+                  color: p.type.includes('bullish') ? '#065f46' :
+                         p.type.includes('bearish') ? '#991b1b' : '#92400e',
+                  fontWeight: '600'
+                }}>
+                  {p.type.replace('_', ' ').toUpperCase()}
+                </span>
+              </div>
+
+              {/* Description */}
+              <p style={{
+                margin: '0 0 12px',
+                fontSize: '0.85rem',
+                color: '#6b7280',
+                lineHeight: '1.6'
+              }}>
+                {p.description}
+              </p>
+
+              {/* Footer */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingTop: '14px',
+                borderTop: '1px solid #f3f4f6'
+              }}>
+                <span style={{ 
+                  fontSize: '0.75rem', 
+                  color: '#9ca3af',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  📅 {p.date}
+                </span>
+                <span style={{
+                  fontSize: '0.75rem',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  background: '#f9fafb',
+                  color: '#374151',
+                  fontWeight: '600',
+                  textTransform: 'uppercase'
+                }}>
+                  {p.trend_context}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ==============================
+// CANDLESTICK STATISTICS (NEW)
+// ==============================
+function CandlestickStatistics({ data }) {
+  const stats = data.candlestick_patterns?.statistics || {};
+  
+  if (!Object.keys(stats).length) return null;
+
+  return (
+    <div style={{
+      background: '#ffffff',
+      border: '1px solid #e5e7eb',
+      borderRadius: '14px',
+      padding: '24px',
+      marginTop: '24px'
+    }}>
+      <h3 style={{ 
+        margin: '0 0 20px', 
+        fontSize: '1.1rem', 
+        fontWeight: '600',
+        color: '#1f2937',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        📊 Pattern Performance History
+        <span style={{
+          fontSize: '0.75rem',
+          color: '#6b7280',
+          fontWeight: '400',
+          background: '#f3f4f6',
+          padding: '4px 8px',
+          borderRadius: '6px'
+        }}>
+          Historical success rates
+        </span>
+      </h3>
+      
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+        gap: '16px'
+      }}>
+        {Object.entries(stats).slice(0, 12).map(([patternName, patternData]) => (
+          <div key={patternName} style={{
+            background: '#f9fafb',
+            borderRadius: '12px',
+            padding: '18px',
+            border: '1px solid #e5e7eb',
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.boxShadow = 'none';
+            e.currentTarget.style.transform = 'translateY(0)';
+          }}>
+            
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px'
+            }}>
+              <h4 style={{
+                margin: 0,
+                fontSize: '0.95rem',
+                fontWeight: '600',
+                color: '#1f2937'
+              }}>
+                {patternName}
+              </h4>
+              <span style={{
+                padding: '5px 10px',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                fontWeight: '700',
+                background: patternData.type.includes('bullish') ? '#d1fae5' : 
+                           patternData.type.includes('bearish') ? '#fee2e2' : '#fef3c7',
+                color: patternData.type.includes('bullish') ? '#065f46' :
+                       patternData.type.includes('bearish') ? '#991b1b' : '#92400e'
+              }}>
+                {patternData.type.replace('_', ' ').toUpperCase()}
+              </span>
+            </div>
+            
+            <div style={{ 
+              fontSize: '0.85rem', 
+              color: '#6b7280', 
+              marginBottom: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <span style={{
+                background: '#e5e7eb',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                fontWeight: '600'
+              }}>
+                {patternData.count} occurrences
+              </span>
+            </div>
+
+            {/* Success rates by time period */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '8px',
+              marginTop: '14px'
+            }}>
+              {['1d', '3d', '5d', '7d', '10d'].map(period => {
+                const outcome = patternData.outcomes?.[period];
+                if (!outcome) return null;
+                
+                const successRate = outcome.success_rate || 0;
+                const isPositive = successRate >= 50;
+                
+                return (
+                  <div key={period} style={{
+                    background: isPositive ? '#dcfce7' : '#fef2f2',
+                    borderRadius: '8px',
+                    padding: '10px 6px',
+                    textAlign: 'center',
+                    border: `2px solid ${isPositive ? '#86efac' : '#fca5a5'}`,
+                    transition: 'transform 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                    
+                    <div style={{
+                      fontSize: '0.7rem',
+                      color: '#6b7280',
+                      fontWeight: '600',
+                      marginBottom: '4px'
+                    }}>
+                      {period}
+                    </div>
+                    <div style={{
+                      fontSize: '1.1rem',
+                      fontWeight: '700',
+                      color: isPositive ? '#059669' : '#dc2626',
+                      marginBottom: '2px'
+                    }}>
+                      {successRate.toFixed(0)}%
+                    </div>
+                    <div style={{
+                      fontSize: '0.65rem',
+                      color: '#9ca3af',
+                      fontWeight: '600'
+                    }}>
+                      {outcome.mean >= 0 ? '↑' : '↓'} {Math.abs(outcome.mean).toFixed(1)}%
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -650,19 +998,52 @@ function Info({ label, value }) {
 function SideInsights({ data }) {
   const summary = data.candlestick_patterns?.summary;
   const recent = data.candlestick_patterns?.recent || [];
+  const analysis = data.analysis || {};
 
   return (
     <div className="side-panel">
       <h3 className="side-title">Quick insights</h3>
 
+      {/* AI Signal Summary */}
+      <div className="side-section" style={{
+        background: analysis.signal === 'BUY' ? '#ecfdf5' :
+                   analysis.signal === 'SELL' ? '#fef2f2' :
+                   analysis.signal === 'HOLD' ? '#fefce8' : '#f0f9ff',
+        border: `2px solid ${
+          analysis.signal === 'BUY' ? '#86efac' :
+          analysis.signal === 'SELL' ? '#fca5a5' :
+          analysis.signal === 'HOLD' ? '#fde047' : '#93c5fd'
+        }`,
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px'
+      }}>
+        <h4 className="side-section-title" style={{ marginBottom: '12px' }}>
+          🎯 AI Signal
+        </h4>
+        <div style={{
+          fontSize: '2rem',
+          fontWeight: '700',
+          color: analysis.signal === 'BUY' ? '#059669' :
+                 analysis.signal === 'SELL' ? '#dc2626' :
+                 analysis.signal === 'HOLD' ? '#d97706' : '#0c4a6e',
+          marginBottom: '8px'
+        }}>
+          {analysis.signal || 'NEUTRAL'}
+        </div>
+        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+          Confidence: <strong>{analysis.confidence?.toFixed(0)}%</strong>
+        </div>
+      </div>
+
       <div className="side-section">
         <h4 className="side-section-title">Candlestick patterns</h4>
         {summary ? (
           <ul className="side-list">
-            <li>Total: {summary.total_detected}</li>
-            <li>Bullish: {summary.bullish}</li>
-            <li>Bearish: {summary.bearish}</li>
-            <li>Confirmed: {summary.confirmed}</li>
+            <li>Total: <strong>{summary.total_detected}</strong></li>
+            <li style={{ color: '#059669' }}>Bullish: <strong>{summary.bullish}</strong></li>
+            <li style={{ color: '#dc2626' }}>Bearish: <strong>{summary.bearish}</strong></li>
+            <li>Confirmed: <strong>{summary.confirmed}</strong></li>
           </ul>
         ) : (
           <p className="text-muted">No patterns detected in recent window.</p>
@@ -687,14 +1068,14 @@ function SideInsights({ data }) {
         <ul className="side-list">
           <li>
             Avg similarity:{" "}
-            {data.metadata?.avg_similarity != null
-              ? `${data.metadata.avg_similarity.toFixed(1)}%`
+            {data.analysis?.mean_similarity != null
+              ? `${data.analysis.mean_similarity.toFixed(1)}%`
               : "--"}
           </li>
-          <li>Matches: {data.metadata?.total_similarity_matches ?? "--"}</li>
+          <li>Matches: {data.similarity_matches?.length ?? "--"}</li>
           <li>
             Candle patterns:{" "}
-            {data.metadata?.total_candlestick_patterns ?? "--"}
+            {data.candlestick_patterns?.summary?.total_detected ?? "--"}
           </li>
         </ul>
       </div>
@@ -703,7 +1084,7 @@ function SideInsights({ data }) {
 }
 
 // ==============================
-// PATTERNS TAB
+// PATTERNS TAB (ENHANCED)
 // ==============================
 function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
   if (!data.similarity_matches || data.similarity_matches.length === 0) {
@@ -826,7 +1207,7 @@ function PatternsTab({ data, expandedMatch, setExpandedMatch }) {
 }
 
 // ==============================
-// PREDICTIONS TAB (with sparklines)
+// PREDICTIONS TAB (ENHANCED)
 // ==============================
 function PredictionsTab({ data }) {
   if (!data.predictions) {
@@ -840,74 +1221,354 @@ function PredictionsTab({ data }) {
   const entries = Object.entries(data.predictions);
 
   return (
-    <div className="predictions-grid">
-      {entries.map(([label, v]) => {
-        const x = [0, 1];
-        return (
-          <div key={label} className="prediction-card">
-            <div className="prediction-header-row">
-              <div className="prediction-label">{label}</div>
-              <div
-                className={`prediction-value ${
-                  v.mean >= 0 ? "prediction-positive" : "prediction-negative"
-                }`}
-              >
-                {v.mean >= 0 ? "+" : ""}
-                {v.mean.toFixed(2)}%
+    <div>
+      {/* Enhanced Summary Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '20px',
+        marginBottom: '32px'
+      }}>
+        {entries.map(([label, v]) => {
+          const isPositive = v.mean >= 0;
+          const positiveRate = v.positive_rate || 50;
+          
+          return (
+            <div key={label} style={{
+              background: '#ffffff',
+              border: `2px solid ${isPositive ? '#86efac' : '#fca5a5'}`,
+              borderRadius: '16px',
+              padding: '24px',
+              position: 'relative',
+              overflow: 'hidden',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = `0 8px 24px ${isPositive ? '#10b98140' : '#ef444440'}`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = 'none';
+            }}>
+              
+              {/* Background gradient */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: '120px',
+                height: '120px',
+                background: `radial-gradient(circle, ${isPositive ? '#10b98130' : '#ef444430'}, transparent)`,
+                pointerEvents: 'none'
+              }} />
+
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '20px',
+                position: 'relative'
+              }}>
+                <h4 style={{
+                  margin: 0,
+                  fontSize: '1.05rem',
+                  fontWeight: '600',
+                  color: '#1f2937',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <Clock style={{ width: '18px', height: '18px', color: '#6b7280' }} />
+                  {label}
+                </h4>
+                {isPositive ? (
+                  <ArrowUp style={{ width: '24px', height: '24px', color: '#059669' }} />
+                ) : (
+                  <ArrowDown style={{ width: '24px', height: '24px', color: '#dc2626' }} />
+                )}
+              </div>
+
+              {/* Main Value */}
+              <div style={{
+                fontSize: '3rem',
+                fontWeight: '700',
+                color: isPositive ? '#059669' : '#dc2626',
+                marginBottom: '16px',
+                lineHeight: '1',
+                position: 'relative'
+              }}>
+                {v.mean >= 0 ? '+' : ''}{v.mean.toFixed(2)}%
+              </div>
+
+              {/* Statistics Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '16px',
+                marginBottom: '16px',
+                position: 'relative'
+              }}>
+                <div style={{
+                  background: '#f9fafb',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <div style={{ 
+                    fontSize: '0.7rem', 
+                    color: '#9ca3af', 
+                    marginBottom: '6px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    MEDIAN
+                  </div>
+                  <div style={{
+                    fontSize: '1.3rem',
+                    fontWeight: '700',
+                    color: '#374151'
+                  }}>
+                    {v.median?.toFixed(2)}%
+                  </div>
+                </div>
+                
+                <div style={{
+                  background: '#f9fafb',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <div style={{ 
+                    fontSize: '0.7rem', 
+                    color: '#9ca3af', 
+                    marginBottom: '6px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    SUCCESS
+                  </div>
+                  <div style={{
+                    fontSize: '1.3rem',
+                    fontWeight: '700',
+                    color: positiveRate >= 50 ? '#059669' : '#dc2626'
+                  }}>
+                    {positiveRate.toFixed(0)}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Range Bar */}
+              <div style={{ marginBottom: '16px', position: 'relative' }}>
+                <div style={{
+                  fontSize: '0.7rem',
+                  color: '#6b7280',
+                  marginBottom: '8px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  RANGE
+                </div>
+                <div style={{
+                  position: 'relative',
+                  height: '10px',
+                  background: '#e5e7eb',
+                  borderRadius: '5px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    position: 'absolute',
+                    left: '0',
+                    top: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: `linear-gradient(to right, #ef4444, #f59e0b, #10b981)`,
+                    opacity: 0.3
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    left: `${((v.mean - v.min) / (v.max - v.min)) * 100}%`,
+                    top: '-2px',
+                    width: '14px',
+                    height: '14px',
+                    background: isPositive ? '#059669' : '#dc2626',
+                    borderRadius: '50%',
+                    border: '2px solid white',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                    transform: 'translateX(-50%)'
+                  }} />
+                </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: '6px',
+                  fontSize: '0.75rem',
+                  color: '#9ca3af',
+                  fontWeight: '600'
+                }}>
+                  <span>{v.min.toFixed(1)}%</span>
+                  <span>{v.max.toFixed(1)}%</span>
+                </div>
+              </div>
+
+              {/* Mini Chart */}
+              <div style={{ height: '70px', marginTop: '16px', position: 'relative' }}>
+                <Plot
+                  data={[
+                    {
+                      x: [0, 1, 2],
+                      y: [v.min, v.mean, v.max],
+                      type: 'scatter',
+                      mode: 'lines+markers',
+                      line: { 
+                        color: isPositive ? '#10b981' : '#ef4444', 
+                        width: 3,
+                        shape: 'spline'
+                      },
+                      marker: { 
+                        size: 8, 
+                        color: isPositive ? '#059669' : '#dc2626',
+                        line: { color: 'white', width: 2 }
+                      },
+                      fill: 'tozeroy',
+                      fillcolor: isPositive ? '#10b98120' : '#ef444420'
+                    }
+                  ]}
+                  layout={{
+                    autosize: true,
+                    margin: { l: 0, r: 0, t: 0, b: 0 },
+                    xaxis: { visible: false },
+                    yaxis: { visible: false },
+                    paper_bgcolor: 'transparent',
+                    plot_bgcolor: 'transparent',
+                    showlegend: false
+                  }}
+                  config={{ displayModeBar: false, staticPlot: true }}
+                  style={{ width: '100%', height: '100%' }}
+                />
               </div>
             </div>
-            <div className="prediction-range">
-              Range: {v.min.toFixed(1)}% – {v.max.toFixed(1)}%
-            </div>
-            <div className="prediction-sparkline">
-              <Plot
-                data={[
-                  {
-                    x,
-                    y: [v.min, v.max],
-                    type: "scatter",
-                    mode: "lines",
-                    line: { color: "#e5e7eb", width: 0 },
-                    fill: "tozeroy",
-                    fillcolor: "rgba(37,99,235,0.15)",
-                    showlegend: false,
-                  },
-                  {
-                    x,
-                    y: [v.mean, v.mean],
-                    type: "scatter",
-                    mode: "lines",
-                    line: {
-                      color: v.mean >= 0 ? "#16a34a" : "#dc2626",
-                      width: 2,
-                    },
-                    showlegend: false,
-                  },
-                ]}
-                layout={{
-                  autosize: true,
-                  margin: { l: 0, r: 0, t: 0, b: 0 },
-                  xaxis: { visible: false },
-                  yaxis: { visible: false },
-                  paper_bgcolor: "rgba(0,0,0,0)",
-                  plot_bgcolor: "rgba(0,0,0,0)",
-                }}
-                config={{ displayModeBar: false, staticPlot: true }}
-                style={{ width: "100%", height: 80 }}
-              />
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+
+      {/* Comparison Chart */}
+      <div style={{
+        background: '#ffffff',
+        border: '1px solid #e5e7eb',
+        borderRadius: '16px',
+        padding: '28px',
+        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.06)'
+      }}>
+        <h3 style={{ 
+          margin: '0 0 24px', 
+          fontSize: '1.2rem', 
+          fontWeight: '600',
+          color: '#1f2937',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px'
+        }}>
+          <BarChart3 style={{ width: '24px', height: '24px', color: '#3b82f6' }} />
+          Predicted Returns Comparison
+        </h3>
+        <PredictionComparisonChart predictions={data.predictions} />
+      </div>
     </div>
   );
 }
 
+function PredictionComparisonChart({ predictions }) {
+  const labels = Object.keys(predictions);
+  const means = labels.map(k => predictions[k].mean);
+  const mins = labels.map(k => predictions[k].min);
+  const maxs = labels.map(k => predictions[k].max);
+
+  return (
+    <Plot
+      data={[
+        {
+          x: labels,
+          y: maxs,
+          type: 'scatter',
+          mode: 'lines',
+          name: 'Best Case',
+          line: { color: '#10b981', width: 2, dash: 'dot' },
+          fill: 'tonexty',
+          fillcolor: 'rgba(16, 185, 129, 0.1)'
+        },
+        {
+          x: labels,
+          y: means,
+          type: 'scatter',
+          mode: 'lines+markers',
+          name: 'Expected',
+          line: { color: '#3b82f6', width: 4 },
+          marker: { size: 12, color: '#2563eb', line: { color: 'white', width: 2 } }
+        },
+        {
+          x: labels,
+          y: mins,
+          type: 'scatter',
+          mode: 'lines',
+          name: 'Worst Case',
+          line: { color: '#ef4444', width: 2, dash: 'dot' },
+          fill: 'tonexty',
+          fillcolor: 'rgba(239, 68, 68, 0.1)'
+        }
+      ]}
+      layout={{
+        autosize: true,
+        height: 400,
+        margin: { l: 70, r: 40, t: 20, b: 70 },
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+        font: { family: 'system-ui', color: '#6b7280', size: 12 },
+        xaxis: {
+          title: { 
+            text: 'Time Horizon',
+            font: { size: 14, color: '#374151', weight: 600 }
+          },
+          tickfont: { size: 13, color: '#6b7280', weight: 500 },
+          gridcolor: '#f3f4f6',
+          showline: true,
+          linecolor: '#e5e7eb',
+          linewidth: 2
+        },
+        yaxis: {
+          title: { 
+            text: 'Return %',
+            font: { size: 14, color: '#374151', weight: 600 }
+          },
+          tickfont: { size: 13, color: '#6b7280', weight: 500 },
+          gridcolor: '#e5e7eb',
+          zeroline: true,
+          zerolinecolor: '#9ca3af',
+          zerolinewidth: 2
+        },
+        hovermode: 'x unified',
+        showlegend: true,
+        legend: {
+          x: 0.02,
+          y: 0.98,
+          bgcolor: 'rgba(255, 255, 255, 0.95)',
+          bordercolor: '#e5e7eb',
+          borderwidth: 2,
+          font: { size: 12 }
+        }
+      }}
+      config={{ displayModeBar: false, responsive: true }}
+      style={{ width: '100%', height: '100%' }}
+    />
+  );
+}
+
 // ==============================
-// AI REPORT TAB (with visual summary)
-// ==============================
-// ==============================
-// AI REPORT TAB - MODERN REDESIGN
+// AI REPORT TAB (ENHANCED)
 // ==============================
 function AiReportTab({ data }) {
   const metadata = data.metadata || {};
@@ -916,7 +1577,7 @@ function AiReportTab({ data }) {
   const indicators = data.indicators || {};
   const patterns = data.candlestick_patterns || {};
 
-  // Pattern type pie chart data
+  // Pattern type distribution
   const patternTypes = {};
   if (patterns.all) {
     patterns.all.forEach(p => {
@@ -935,61 +1596,77 @@ function AiReportTab({ data }) {
   const signalColor = signalColors[analysis.signal] || signalColors.NEUTRAL;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Header Section */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {/* Enhanced Header Section */}
       <div style={{
-        background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #1d4ed8 100%)',
-        borderRadius: '16px',
-        padding: '32px',
+        background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%)',
+        borderRadius: '20px',
+        padding: '36px',
         color: 'white',
-        boxShadow: '0 20px 40px rgba(37, 99, 235, 0.25)',
+        boxShadow: '0 20px 50px rgba(37, 99, 235, 0.3)',
         display: 'grid',
         gridTemplateColumns: 'auto 1fr auto',
-        gap: '32px',
-        alignItems: 'center'
+        gap: '36px',
+        alignItems: 'center',
+        position: 'relative',
+        overflow: 'hidden'
       }}>
+        {/* Decorative background */}
+        <div style={{
+          position: 'absolute',
+          top: '-50%',
+          right: '-10%',
+          width: '400px',
+          height: '400px',
+          background: 'radial-gradient(circle, rgba(255,255,255,0.1), transparent)',
+          pointerEvents: 'none'
+        }} />
+
         {/* Left: Signal Badge */}
         <div style={{
-          width: '120px',
-          height: '120px',
-          borderRadius: '20px',
+          width: '130px',
+          height: '130px',
+          borderRadius: '24px',
           background: 'rgba(255, 255, 255, 0.15)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexDirection: 'column',
           backdropFilter: 'blur(10px)',
-          border: '2px solid rgba(255, 255, 255, 0.2)'
+          border: '3px solid rgba(255, 255, 255, 0.25)',
+          boxShadow: '0 8px 20px rgba(0, 0, 0, 0.1)',
+          position: 'relative'
         }}>
-          <div style={{ fontSize: '0.85rem', opacity: 0.8 }}>Signal</div>
+          <div style={{ fontSize: '0.9rem', opacity: 0.9, fontWeight: '500' }}>Signal</div>
           <div style={{
-            fontSize: '2.5rem',
-            fontWeight: '700',
-            marginTop: '8px'
+            fontSize: '2.8rem',
+            fontWeight: '800',
+            marginTop: '8px',
+            letterSpacing: '-1px'
           }}>
             {analysis.signal || 'N/A'}
           </div>
         </div>
 
         {/* Middle: Description */}
-        <div>
-          <h2 style={{ margin: '0 0 12px', fontSize: '1.8rem', fontWeight: '700' }}>
+        <div style={{ position: 'relative' }}>
+          <h2 style={{ margin: '0 0 14px', fontSize: '2rem', fontWeight: '800', letterSpacing: '-0.5px' }}>
             AI Analysis Dashboard
           </h2>
-          <p style={{ margin: '0 0 16px', opacity: 0.95, fontSize: '0.95rem', lineHeight: '1.6' }}>
+          <p style={{ margin: '0 0 20px', opacity: 0.95, fontSize: '1rem', lineHeight: '1.7' }}>
             {analysis.reason || 'Comprehensive AI-powered market analysis with pattern recognition and forecasting'}
           </p>
-          <div style={{ display: 'flex', gap: '20px', fontSize: '0.9rem' }}>
+          <div style={{ display: 'flex', gap: '28px', fontSize: '0.95rem' }}>
             <div>
-              <div style={{ opacity: 0.7 }}>Confidence</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: '700' }}>
+              <div style={{ opacity: 0.8, marginBottom: '6px' }}>Confidence</div>
+              <div style={{ fontSize: '1.6rem', fontWeight: '800' }}>
                 {analysis.confidence?.toFixed(0)}%
               </div>
             </div>
             <div>
-              <div style={{ opacity: 0.7 }}>Avg Similarity</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: '700' }}>
-                {metadata.avg_similarity?.toFixed(1)}%
+              <div style={{ opacity: 0.8, marginBottom: '6px' }}>Avg Similarity</div>
+              <div style={{ fontSize: '1.6rem', fontWeight: '800' }}>
+                {analysis.mean_similarity?.toFixed(1)}%
               </div>
             </div>
           </div>
@@ -999,16 +1676,29 @@ function AiReportTab({ data }) {
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '16px',
-          textAlign: 'right'
+          gap: '18px',
+          textAlign: 'right',
+          position: 'relative'
         }}>
-          <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '12px 20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
-            <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Matches Found</div>
-            <div style={{ fontSize: '2rem', fontWeight: '700' }}>{metadata.total_similarity_matches || 0}</div>
+          <div style={{ 
+            background: 'rgba(255, 255, 255, 0.12)', 
+            padding: '16px 24px', 
+            borderRadius: '14px', 
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)'
+          }}>
+            <div style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '6px' }}>Matches Found</div>
+            <div style={{ fontSize: '2.2rem', fontWeight: '800' }}>{data.similarity_matches?.length || 0}</div>
           </div>
-          <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '12px 20px', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
-            <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Patterns</div>
-            <div style={{ fontSize: '2rem', fontWeight: '700' }}>{patterns.summary?.total_detected || 0}</div>
+          <div style={{ 
+            background: 'rgba(255, 255, 255, 0.12)', 
+            padding: '16px 24px', 
+            borderRadius: '14px', 
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)'
+          }}>
+            <div style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '6px' }}>Patterns</div>
+            <div style={{ fontSize: '2.2rem', fontWeight: '800' }}>{patterns.summary?.total_detected || 0}</div>
           </div>
         </div>
       </div>
@@ -1016,19 +1706,32 @@ function AiReportTab({ data }) {
       {/* Charts Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-        gap: '20px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '24px'
       }}>
         {/* Prediction Scenarios Chart */}
         <div style={{
           background: '#ffffff',
           border: '1px solid #e5e7eb',
-          borderRadius: '14px',
-          padding: '24px',
+          borderRadius: '16px',
+          padding: '28px',
           boxShadow: '0 4px 15px rgba(0, 0, 0, 0.06)'
         }}>
-          <h3 style={{ margin: '0 0 20px', fontSize: '1.1rem', fontWeight: '600', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '4px', height: '24px', background: 'linear-gradient(180deg, #3b82f6, #1d4ed8)', borderRadius: '2px' }} />
+          <h3 style={{ 
+            margin: '0 0 24px', 
+            fontSize: '1.15rem', 
+            fontWeight: '600', 
+            color: '#1f2937', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px' 
+          }}>
+            <div style={{ 
+              width: '5px', 
+              height: '28px', 
+              background: 'linear-gradient(180deg, #3b82f6, #1d4ed8)', 
+              borderRadius: '3px' 
+            }} />
             Prediction Scenarios
           </h3>
           <PredictionHorizonsChart predictions={predictions} />
@@ -1038,12 +1741,25 @@ function AiReportTab({ data }) {
         <div style={{
           background: '#ffffff',
           border: '1px solid #e5e7eb',
-          borderRadius: '14px',
-          padding: '24px',
+          borderRadius: '16px',
+          padding: '28px',
           boxShadow: '0 4px 15px rgba(0, 0, 0, 0.06)'
         }}>
-          <h3 style={{ margin: '0 0 20px', fontSize: '1.1rem', fontWeight: '600', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '4px', height: '24px', background: 'linear-gradient(180deg, #10b981, #059669)', borderRadius: '2px' }} />
+          <h3 style={{ 
+            margin: '0 0 24px', 
+            fontSize: '1.15rem', 
+            fontWeight: '600', 
+            color: '#1f2937', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px' 
+          }}>
+            <div style={{ 
+              width: '5px', 
+              height: '28px', 
+              background: 'linear-gradient(180deg, #10b981, #059669)', 
+              borderRadius: '3px' 
+            }} />
             Pattern Distribution
           </h3>
           <PatternPieChart patternTypes={patternTypes} />
@@ -1053,13 +1769,26 @@ function AiReportTab({ data }) {
         <div style={{
           background: '#ffffff',
           border: '1px solid #e5e7eb',
-          borderRadius: '14px',
-          padding: '24px',
+          borderRadius: '16px',
+          padding: '28px',
           boxShadow: '0 4px 15px rgba(0, 0, 0, 0.06)',
           gridColumn: 'span 1'
         }}>
-          <h3 style={{ margin: '0 0 20px', fontSize: '1.1rem', fontWeight: '600', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '4px', height: '24px', background: 'linear-gradient(180deg, #f59e0b, #d97706)', borderRadius: '2px' }} />
+          <h3 style={{ 
+            margin: '0 0 24px', 
+            fontSize: '1.15rem', 
+            fontWeight: '600', 
+            color: '#1f2937', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px' 
+          }}>
+            <div style={{ 
+              width: '5px', 
+              height: '28px', 
+              background: 'linear-gradient(180deg, #f59e0b, #d97706)', 
+              borderRadius: '3px' 
+            }} />
             Technical Indicators
           </h3>
           <TechnicalGauges rsi={indicators.rsi_14} volatility={indicators.volatility} />
@@ -1070,25 +1799,34 @@ function AiReportTab({ data }) {
       <div style={{
         display: 'grid',
         gridTemplateColumns: '2fr 1fr',
-        gap: '20px',
+        gap: '24px',
         alignItems: 'start'
       }}>
         {/* AI Report Text */}
         <div style={{
           background: '#ffffff',
           border: '1px solid #e5e7eb',
-          borderRadius: '14px',
-          padding: '24px',
+          borderRadius: '16px',
+          padding: '28px',
           boxShadow: '0 4px 15px rgba(0, 0, 0, 0.06)',
-          maxHeight: '500px',
+          maxHeight: '600px',
           overflowY: 'auto'
         }}>
-          <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: '600', color: '#1f2937' }}>
-            📋 AI Report
+          <h3 style={{ 
+            margin: '0 0 20px', 
+            fontSize: '1.15rem', 
+            fontWeight: '600', 
+            color: '#1f2937',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <BrainCircuit style={{ width: '22px', height: '22px', color: '#3b82f6' }} />
+            AI Report
           </h3>
           <div style={{
-            fontSize: '0.9rem',
-            lineHeight: '1.7',
+            fontSize: '0.95rem',
+            lineHeight: '1.8',
             color: '#374151'
           }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -1098,19 +1836,27 @@ function AiReportTab({ data }) {
         </div>
 
         {/* Right Sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
           {/* Quick Stats Card */}
           <div style={{
             background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
             border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '20px',
+            borderRadius: '16px',
+            padding: '24px',
             boxShadow: '0 4px 15px rgba(0, 0, 0, 0.04)'
           }}>
-            <h4 style={{ margin: '0 0 16px', fontSize: '0.95rem', fontWeight: '600', color: '#1f2937' }}>
+            <h4 style={{ 
+              margin: '0 0 18px', 
+              fontSize: '1rem', 
+              fontWeight: '600', 
+              color: '#1f2937',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
               ⚡ Quick Stats
             </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <StatRow label="RSI" value={indicators.rsi_14?.toFixed(0)} unit="" color="#3b82f6" />
               <StatRow label="Volatility" value={indicators.volatility?.toFixed(2)} unit="%" color="#10b981" />
               <StatRow label="Patterns" value={patterns.summary?.total_detected || 0} unit="total" color="#f59e0b" />
@@ -1122,26 +1868,36 @@ function AiReportTab({ data }) {
           {/* Market Signal Card */}
           <div style={{
             background: signalColor.bg,
-            border: `2px solid ${signalColor.border}`,
-            borderRadius: '14px',
-            padding: '20px',
+            border: `3px solid ${signalColor.border}`,
+            borderRadius: '16px',
+            padding: '24px',
             boxShadow: '0 4px 15px rgba(0, 0, 0, 0.04)'
           }}>
-            <h4 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: '600', color: signalColor.text }}>
+            <h4 style={{ 
+              margin: '0 0 14px', 
+              fontSize: '1rem', 
+              fontWeight: '600', 
+              color: signalColor.text,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
               🎯 Market Signal
             </h4>
             <div style={{
-              fontSize: '2rem',
-              fontWeight: '700',
+              fontSize: '2.5rem',
+              fontWeight: '800',
               color: signalColor.text,
-              marginBottom: '8px'
+              marginBottom: '10px',
+              letterSpacing: '-1px'
             }}>
               {analysis.signal || 'N/A'}
             </div>
             <div style={{
-              fontSize: '0.85rem',
+              fontSize: '0.9rem',
               color: signalColor.text,
-              opacity: 0.8
+              opacity: 0.85,
+              fontWeight: '500'
             }}>
               Confidence: {analysis.confidence?.toFixed(0)}%
             </div>
@@ -1151,11 +1907,19 @@ function AiReportTab({ data }) {
           <div style={{
             background: '#ffffff',
             border: '1px solid #e5e7eb',
-            borderRadius: '14px',
-            padding: '20px',
+            borderRadius: '16px',
+            padding: '24px',
             boxShadow: '0 4px 15px rgba(0, 0, 0, 0.06)'
           }}>
-            <h4 style={{ margin: '0 0 16px', fontSize: '0.95rem', fontWeight: '600', color: '#1f2937' }}>
+            <h4 style={{ 
+              margin: '0 0 18px', 
+              fontSize: '1rem', 
+              fontWeight: '600', 
+              color: '#1f2937',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
               🔥 Top Matches
             </h4>
             <SimilarityHeatmap similarity_matches={data.similarity_matches || []} />
@@ -1167,31 +1931,52 @@ function AiReportTab({ data }) {
       <div style={{
         background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
         border: '1px solid #e2e8f0',
-        borderRadius: '14px',
-        padding: '20px',
+        borderRadius: '16px',
+        padding: '24px',
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-        gap: '16px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+        gap: '18px'
       }}>
-        <FooterStatBox label="Data Points" value={metadata.total_candlestick_patterns} icon="📊" />
-        <FooterStatBox label="Avg Similarity" value={`${metadata.avg_similarity?.toFixed(1)}%`} icon="🎯" />
-        <FooterStatBox label="Top Match" value={`${data.similarity_matches?.[0]?.score?.toFixed(1)}%`} icon="⭐" />
-        <FooterStatBox label="Confidence" value={`${analysis.confidence?.toFixed(0)}%`} icon="✨" />
+        <FooterStatBox 
+          label="Data Points" 
+          value={patterns.all?.length || 0} 
+          icon="📊" 
+        />
+        <FooterStatBox 
+          label="Avg Similarity" 
+          value={`${analysis.mean_similarity?.toFixed(1)}%`} 
+          icon="🎯" 
+        />
+        <FooterStatBox 
+          label="Top Match" 
+          value={`${data.similarity_matches?.[0]?.score?.toFixed(1)}%`} 
+          icon="⭐" 
+        />
+        <FooterStatBox 
+          label="Confidence" 
+          value={`${analysis.confidence?.toFixed(0)}%`} 
+          icon="✨" 
+        />
       </div>
     </div>
   );
 }
 
 // ==============================
-// Helper Components
+// Helper Components for AI Report
 // ==============================
-
 function StatRow({ label, value, unit, color }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-      <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>{label}</span>
-      <span style={{ fontSize: '1.2rem', fontWeight: '700', color: color }}>
-        {value} <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{unit}</span>
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'space-between', 
+      alignItems: 'baseline',
+      padding: '10px 0',
+      borderBottom: '1px solid #e5e7eb'
+    }}>
+      <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: '500' }}>{label}</span>
+      <span style={{ fontSize: '1.3rem', fontWeight: '700', color: color }}>
+        {value} <span style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: '500' }}>{unit}</span>
       </span>
     </div>
   );
@@ -1201,291 +1986,241 @@ function FooterStatBox({ label, value, icon }) {
   return (
     <div style={{
       textAlign: 'center',
-      padding: '12px',
-      borderRadius: '10px',
+      padding: '18px',
+      borderRadius: '12px',
       background: '#ffffff',
-      border: '1px solid #e5e7eb'
-    }}>
-      <div style={{ fontSize: '1.5rem', marginBottom: '4px' }}>{icon}</div>
-      <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '4px' }}>{label}</div>
-      <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#1f2937' }}>{value || '--'}</div>
+      border: '1px solid #e5e7eb',
+      transition: 'transform 0.2s'
+    }}
+    onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+    onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+      <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>{icon}</div>
+      <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '6px', fontWeight: '500' }}>{label}</div>
+      <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937' }}>{value || '--'}</div>
     </div>
   );
 }
 
 // ==============================
-// Chart Components
+// Chart Components for AI Report
 // ==============================
-
 function PredictionHorizonsChart({ predictions }) {
   if (!Object.keys(predictions).length) {
-    return <p style={{ color: '#9ca3af', textAlign: 'center', padding: '20px' }}>No predictions available</p>;
+    return <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>No predictions available</p>;
   }
 
   const labels = Object.keys(predictions);
-  const means = labels.map(k => predictions[k].mean || 0);
-  const colors = means.map(m => m >= 0 ? '#10b981' : '#ef4444');
+  const values = labels.map(k => predictions[k].mean);
 
   return (
     <Plot
       data={[
         {
-          x: labels,
-          y: means,
-          type: 'bar',
+          labels: labels,
+          values: values.map(Math.abs),
+          type: 'pie',
           marker: {
-            color: colors,
-            line: { color: colors.map(c => c === '#10b981' ? '#059669' : '#991b1b'), width: 2 }
+            colors: values.map(v => 
+              v >= 0 ? '#10b981' : '#ef4444'
+            )
           },
-          text: means.map(m => `${m >= 0 ? '+' : ''}${m.toFixed(2)}%`),
-          textposition: 'outside',
-          hovertemplate: '%{x}<br>Return: %{y:.2f}%<extra></extra>'
+          textinfo: 'label+percent',
+          textfont: { size: 12, color: '#ffffff', weight: 600 },
+          hovertemplate: '<b>%{label}</b><br>Return: %{value:.2f}%<extra></extra>'
         }
       ]}
       layout={{
         autosize: true,
-        margin: { t: 20, b: 40, l: 50, r: 20 },
+        height: 280,
+        margin: { l: 10, r: 10, t: 10, b: 10 },
         paper_bgcolor: 'transparent',
-        plot_bgcolor: 'transparent',
-        font: { family: 'system-ui', color: '#6b7280' },
-        xaxis: {
-          title: 'Time Horizon',
-          tickfont: { color: '#6b7280', size: 11 },
-          showgrid: false,
-          zeroline: false
-        },
-        yaxis: {
-          title: 'Expected Return %',
-          tickfont: { color: '#6b7280', size: 11 },
-          gridcolor: '#e5e7eb',
-          zeroline: true,
-          zerolinecolor: '#d1d5db',
-          zerolinewidth: 1
-        },
-        height: 280
+        showlegend: false
       }}
-      config={{ displayModeBar: false, responsive: true }}
+      config={{ displayModeBar: false, staticPlot: true }}
       style={{ width: '100%', height: '100%' }}
     />
   );
 }
 
 function PatternPieChart({ patternTypes }) {
-  const labels = Object.keys(patternTypes);
-  const values = labels.map(k => patternTypes[k]);
-
-  if (!labels.length) {
-    return <p style={{ color: '#9ca3af', textAlign: 'center', padding: '20px' }}>No patterns detected</p>;
+  if (!Object.keys(patternTypes).length) {
+    return <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>No pattern data available</p>;
   }
 
-  const colorMap = {
-    'bullish': '#10b981',
-    'bearish': '#ef4444',
-    'reversal_bullish': '#34d399',
-    'reversal_bearish': '#f87171',
+  const colors = {
+    'reversal_bullish': '#10b981',
+    'reversal_bearish': '#ef4444',
+    'bullish': '#059669',
+    'bearish': '#dc2626',
     'neutral': '#f59e0b'
   };
-
-  const colors = labels.map(l => colorMap[l] || '#94a3af');
 
   return (
     <Plot
       data={[
         {
-          labels,
-          values,
+          labels: Object.keys(patternTypes).map(k => k.replace('_', ' ').toUpperCase()),
+          values: Object.values(patternTypes),
           type: 'pie',
-          hole: 0.5,
-          marker: { colors, line: { color: '#ffffff', width: 2 } },
-          textinfo: 'label+percent',
-          textposition: 'inside',
-          textfont: { size: 12, color: '#ffffff' },
-          hovertemplate: '%{label}<br>Count: %{value}<br>%{percent}<extra></extra>'
+          marker: {
+            colors: Object.keys(patternTypes).map(k => colors[k] || '#9ca3af')
+          },
+          textinfo: 'label+value',
+          textfont: { size: 11, color: '#ffffff', weight: 600 },
+          hovertemplate: '<b>%{label}</b><br>Count: %{value}<extra></extra>'
         }
       ]}
       layout={{
         autosize: true,
-        margin: { t: 20, b: 20, l: 20, r: 20 },
+        height: 280,
+        margin: { l: 10, r: 10, t: 10, b: 10 },
         paper_bgcolor: 'transparent',
-        plot_bgcolor: 'transparent',
-        font: { family: 'system-ui', color: '#6b7280' },
-        showlegend: true,
-        legend: { x: -0.1, y: -0.15, orientation: 'h', font: { size: 11 } },
-        height: 280
+        showlegend: false
       }}
-      config={{ displayModeBar: false, responsive: true }}
+      config={{ displayModeBar: false, staticPlot: true }}
       style={{ width: '100%', height: '100%' }}
     />
   );
 }
 
 function TechnicalGauges({ rsi, volatility }) {
-  const gauges = [
-    {
-      label: 'RSI (14)',
-      value: rsi || 50,
-      max: 100,
-      minGood: 30,
-      maxGood: 70,
-      unit: '',
-      getColor: (v) => v > 70 ? '#ef4444' : v < 30 ? '#10b981' : '#f59e0b'
-    },
-    {
-      label: 'Volatility',
-      value: volatility || 15,
-      max: 50,
-      minGood: 10,
-      maxGood: 20,
-      unit: '%',
-      getColor: (v) => v > 20 ? '#ef4444' : v < 10 ? '#10b981' : '#2563eb'
-    }
-  ];
-
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
-      gap: '16px'
-    }}>
-      {gauges.map((gauge, i) => {
-        const percent = Math.min((gauge.value / gauge.max) * 100, 100);
-        const color = gauge.getColor(gauge.value);
-
-        return (
-          <div key={i} style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '12px', fontWeight: '500' }}>
-              {gauge.label}
-            </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* RSI Gauge */}
+      <div>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          marginBottom: '12px',
+          alignItems: 'baseline'
+        }}>
+          <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: '600' }}>RSI (14)</span>
+          <span style={{ fontSize: '1.8rem', fontWeight: '700', color: '#1f2937' }}>
+            {rsi?.toFixed(0) || '--'}
+          </span>
+        </div>
+        <div style={{
+          height: '12px',
+          background: 'linear-gradient(to right, #10b981, #f59e0b, #ef4444)',
+          borderRadius: '6px',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          {rsi && (
             <div style={{
-              position: 'relative',
-              width: '100px',
-              height: '100px',
-              margin: '0 auto',
-              background: 'conic-gradient(from 0deg, #e5e7eb 0deg, #d1d5db 360deg)',
+              position: 'absolute',
+              left: `${rsi}%`,
+              top: '-4px',
+              width: '20px',
+              height: '20px',
+              background: '#1f2937',
               borderRadius: '50%',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                position: 'absolute',
-                width: '100%',
-                height: '100%',
-                background: `conic-gradient(from 0deg, ${color} 0deg, ${color} ${percent * 3.6}deg, #e5e7eb ${percent * 3.6}deg)`,
-                borderRadius: '50%'
-              }} />
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '80px',
-                height: '80px',
-                borderRadius: '50%',
-                background: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexDirection: 'column',
-                border: `2px solid ${color}`
-              }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: '700', color }}>{gauge.value.toFixed(0)}</div>
-                <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{gauge.unit}</div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+              border: '3px solid white',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+              transform: 'translateX(-50%)'
+            }} />
+          )}
+        </div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: '8px',
+          fontSize: '0.75rem',
+          color: '#9ca3af',
+          fontWeight: '600'
+        }}>
+          <span>0</span>
+          <span>50</span>
+          <span>100</span>
+        </div>
+      </div>
+
+      {/* Volatility Bar */}
+      <div>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          marginBottom: '12px',
+          alignItems: 'baseline'
+        }}>
+          <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: '600' }}>Volatility</span>
+          <span style={{ fontSize: '1.8rem', fontWeight: '700', color: '#1f2937' }}>
+            {volatility?.toFixed(1) || '--'}%
+          </span>
+        </div>
+        <div style={{
+          height: '12px',
+          background: '#e5e7eb',
+          borderRadius: '6px',
+          overflow: 'hidden'
+        }}>
+          {volatility && (
+            <div style={{
+              width: `${Math.min(volatility * 2, 100)}%`,
+              height: '100%',
+              background: volatility > 20 ? '#ef4444' : volatility > 10 ? '#f59e0b' : '#10b981',
+              borderRadius: '6px',
+              transition: 'width 0.3s'
+            }} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
 function SimilarityHeatmap({ similarity_matches }) {
-  if (!similarity_matches?.length) {
-    return <p style={{ color: '#9ca3af', textAlign: 'center', padding: '20px' }}>No matches found</p>;
+  if (!similarity_matches || similarity_matches.length === 0) {
+    return <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>No matches available</p>;
   }
 
-  const topMatches = similarity_matches.slice(0, 5);
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {topMatches.map((match, i) => (
-        <div key={i} style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '12px',
-          background: '#f9fafb',
-          borderRadius: '8px',
-          border: '1px solid #f3f4f6'
-        }}>
-          <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-            color: 'white',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '0.8rem',
-            fontWeight: '700'
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {similarity_matches.slice(0, 5).map((match, idx) => {
+        const score = match.score || 0;
+        const color = score > 70 ? '#10b981' : score > 50 ? '#f59e0b' : '#ef4444';
+        
+        return (
+          <div key={idx} style={{
+            padding: '12px',
+            background: '#f9fafb',
+            borderRadius: '10px',
+            border: '1px solid #e5e7eb'
           }}>
-            #{i + 1}
-          </div>
-          <div style={{ flex: 1, fontSize: '0.8rem' }}>
-            <div style={{ color: '#1f2937', fontWeight: '500' }}>{match.start_date}</div>
-            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>Similarity match</div>
-          </div>
-          <div style={{
-            fontSize: '1.1rem',
-            fontWeight: '700',
-            background: 'linear-gradient(135deg, #10b981, #059669)',
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
-            {match.score?.toFixed(1)}%
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ==============================
-// CANDLESTICK STRIP
-// ==============================
-function CandlestickStrip({ data }) {
-  const summary = data.candlestick_patterns?.summary;
-  const recent = data.candlestick_patterns?.recent || [];
-
-  if (!summary && recent.length === 0) return null;
-
-  return (
-    <div className="candle-strip">
-      {summary && (
-        <div className="candle-summary">
-          <span>Total: {summary.total_detected}</span>
-          <span>Bullish: {summary.bullish}</span>
-          <span>Bearish: {summary.bearish}</span>
-          <span>Confirmed: {summary.confirmed}</span>
-        </div>
-      )}
-
-      {recent.length > 0 && (
-        <div className="candle-chips">
-          {recent.slice(0, 5).map((p) => (
-            <div
-              key={p.date + p.name}
-              className={`candle-chip candle-chip-${p.type}`}
-              title={p.description}
-            >
-              <span className="candle-name">{p.name}</span>
-              <span className="candle-date">{p.date}</span>
-              <span className="candle-conf">{p.confidence}%</span>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginBottom: '8px',
+              fontSize: '0.85rem'
+            }}>
+              <span style={{ color: '#6b7280', fontWeight: '500' }}>
+                Match #{idx + 1}
+              </span>
+              <span style={{ 
+                fontWeight: '700', 
+                color: color,
+                fontSize: '1rem'
+              }}>
+                {score.toFixed(1)}%
+              </span>
             </div>
-          ))}
-        </div>
-      )}
+            <div style={{
+              height: '6px',
+              background: '#e5e7eb',
+              borderRadius: '3px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                width: `${score}%`,
+                height: '100%',
+                background: color,
+                borderRadius: '3px',
+                transition: 'width 0.3s'
+              }} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
